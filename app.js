@@ -24,13 +24,15 @@ function fm(v, dec) {
 const toNum = s => { const v = parseFloat(String(s || "").replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; };
 
 /* ---------- state ---------- */
+const HOTEL0 = { lat: 48.2056, lng: 16.3744, name: "HOME1 – Lumes Boutique Hotel", addr: "Weihburggasse 18-20, 1010 Wien", phone: "+43 1 9900385", ci: "15:00–21:00", co: "11:00-dək", note: "Self check-in otelidir." };
 const DEFAULT_LIVE = { eurAzn: 1.96, eurTry: 55.2, weather: [], alerts: [] };
 const S = {
-  code: null, me: null, gps: "wait", hotel: LS.get("hotel", null), album: LS.get("album", []),
+  code: null, me: null, gps: "wait", hotel: LS.get("hotel", null) || HOTEL0, album: LS.get("album", []),
   live: LS.get("live", DEFAULT_LIVE), expenses: LS.get("expCache", []), pending: LS.get("expPending", []),
   ai: LS.get("aiOn", true), online: true, dest: null, filter: "all", friends: {}, share: LS.get("shareLoc", false), photos: LS.get("photosCache", []),
 };
 let ME = LS.get("who", null);
+Object.defineProperty(byId, "hotel", { get: () => { const h = S.hotel || HOTEL0; return { id: "hotel", name: "🏨 " + (h.name || "Otel"), lat: h.lat, lng: h.lng, cat: "tarix", d: h.addr || "" }; } });
 const TF_MIN = 75.01, TF_RATE = 0.12; // Austria: min €75.01 per receipt; ~12% net back after operator fees
 const tfBack = eur => eur >= TF_MIN ? eur * TF_RATE : 0;
 const R = () => ({ azn: +S.live.eurAzn || 1.96, try: +S.live.eurTry || 55 });
@@ -163,7 +165,7 @@ let syncing = false;
 async function sync() {
   if (syncing || !S.code) return; syncing = true;
   try {
-    const j = await api("sync");
+    const j = await api("sync", { who: ME || "" });
     S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai);
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
@@ -252,8 +254,8 @@ function renderHome() {
   $("#wxCard").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
     (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`;
   renderConv(); renderInstall();
-  const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return a + (ps.includes(ME) ? (+e.eur || 0) / ps.length : 0); }, 0) : 0;
-  $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün sənin payın: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
+  const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
+  $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
 const vDate = ts => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna" }).format(new Date(ts));
@@ -484,7 +486,7 @@ function renderPrice(p, res, cached) {
    ${v ? `<button class="btn pri wide mt" id="prAdd">💶 Aldım — xərclərə yaz</button>` : ""}`;
   $("#prEdit").onclick = () => { prCur = prCur || { p }; priceForm(""); };
   $("#prFresh").onclick = () => { prCur = prCur || { p, thumb: null }; prCur.p = p; priceSearch(true); };
-  if ($("#prAdd")) $("#prAdd").onclick = () => { goView("exp"); setTimeout(() => { $("#expA").value = String(v).replace(".", ","); setExpCur("EUR"); $("#expD").value = name.slice(0, 80); $("#expA").dispatchEvent(new Event("input")); }, 60); };
+  if ($("#prAdd")) $("#prAdd").onclick = () => { if (ME) { expUI.mode = "mine"; LS.set("expMode", "mine"); expBuilt = false; } goView("exp"); setTimeout(() => { $("#expA").value = String(v).replace(".", ","); setExpCur("EUR"); $("#expD").value = name.slice(0, 80); $("#expA").dispatchEvent(new Event("input")); }, 60); };
 }
 async function priceHistory() {
   showResult(`<div class="ttl"><h2>🧾 Baxılan qiymətlər</h2></div><div class="card" id="phB"><span class="spin"></span></div>`);
@@ -577,32 +579,70 @@ $("#lsMic").onclick = () => {
 };
 
 /* ---------- expenses ---------- */
-const expUI = { cur: "EUR", payer: ME || PEOPLE[0], parts: PEOPLE.slice(), view: "all", cat: "" };
+const expUI = { cur: "EUR", payer: ME || PEOPLE[0], parts: PEOPLE.slice(), view: "all", cat: "", mode: LS.get("expMode", "shared") };
+const PCATS = ["👗 Geyim", "👟 Ayaqqabı", "💄 Kosmetika", "🎁 Hədiyyə", "🍫 Suvenir", "🍽 Yemək", "☕ Kafe", "🛍 Digər"];
 const CATS = ["🍽 Yemək", "☕ Kafe", "🎟 Bilet", "🚇 Nəqliyyat", "🛍 Alış-veriş", "🎄 Bazar"];
 let expBuilt = false;
+const shared = l => l.filter(e => !e.priv);
+const myShare = e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return e.priv ? (e.by === ME ? +e.eur || 0 : 0) : ps.includes(ME) ? (+e.eur || 0) / ps.length : 0; };
 function expAll() { return S.expenses.concat(S.pending.map(p => Object.assign({ pending: true, id: "p" + p.ts }, p))).sort((a, b) => (b.ts || 0) - (a.ts || 0)); }
-function expSum(list) { const s = {}; PEOPLE.forEach(p => s[p] = { paid: 0, share: 0 }); let tot = 0;
+function expSum(list) { list = shared(list); const s = {}; PEOPLE.forEach(p => s[p] = { paid: 0, share: 0 }); let tot = 0;
   list.forEach(e => { const eur = +e.eur || 0; const parts = (e.parts && e.parts.length ? e.parts : PEOPLE).filter(p => s[p]); if (!parts.length) return; tot += eur; if (s[e.payer]) s[e.payer].paid += eur; parts.forEach(p => s[p].share += eur / parts.length); });
   return { tot, s }; }
 function settle(s) { const bal = PEOPLE.map(p => ({ p, v: Math.round((s[p].paid - s[p].share) * 100) / 100 }));
   const cr = bal.filter(x => x.v > .009).sort((a, b) => b.v - a.v), db = bal.filter(x => x.v < -.009).map(x => ({ p: x.p, v: -x.v })).sort((a, b) => b.v - a.v); const out = []; let i = 0, j = 0;
   while (i < db.length && j < cr.length) { const m = Math.min(db[i].v, cr[j].v); out.push({ from: db[i].p, to: cr[j].p, v: m }); db[i].v -= m; cr[j].v -= m; if (db[i].v < .01) i++; if (cr[j].v < .01) j++; } return out; }
+function budgetOf() { return ME ? +LS.get("budget." + ME, 0) || 0 : 0; }
+function renderBudget(all) {
+  const B = $("#budgetBox"); if (!B) return;
+  if (!ME) { B.innerHTML = ""; return; }
+  const b = budgetOf(), spent = all.reduce((a, e) => a + myShare(e), 0), r = R();
+  if (!b) { B.innerHTML = `<button class="lnk mt" id="bdSet">🎯 Öz büdcəni təyin et</button>`; }
+  else { const pct = Math.min(100, Math.round(spent / b * 100)), left = b - spent;
+    B.innerHTML = `<div class="card mt"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="sm dim">🎯 ${esc(ME)} — büdcə ${fm(b, 0)} €</span><button class="lnk sm" id="bdSet">dəyiş</button></div>
+     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><b style="font:700 22px Fraunces,serif">${fm(spent)} € xərcləndi</b><span class="${left < 0 ? "neg" : "mute"}" style="font-weight:600">${left >= 0 ? "qalıb " + fm(left) + " €" : "aşılıb " + fm(-left) + " €"}</span></div>
+     <div class="bar mt"><i style="width:${pct}%;background:${pct >= 100 ? "#C8102E" : pct >= 80 ? "#E09B2D" : "#2E8B57"}"></i></div>
+     <div class="sm dim" style="margin-top:6px">≈ ${fm(spent * r.azn)} ₼ · ortaq payın + şəxsi xərclərin</div></div>`; }
+  $("#bdSet").onclick = () => { const v = prompt("Səfər üçün büdcən neçə avrodur? (məs. 800)", b || ""); if (v === null) return; LS.set("budget." + ME, Math.max(0, toNum(v))); renderExpData(); };
+}
+function renderMine(all) {
+  $("#expSync").innerHTML = `<span class="sync">🔒 Şəxsi xərclərin yalnız səndə görünür · ortaq paylar avtomatik burada</span>`;
+  const r = R(), mineP = all.filter(e => e.priv && e.by === ME), mineS = shared(all).filter(e => myShare(e) > 0);
+  const sP = mineP.reduce((a, e) => a + (+e.eur || 0), 0), sS = mineS.reduce((a, e) => a + myShare(e), 0);
+  const byCat = {}; mineP.forEach(e => { const c = e.cat || "🛍 Digər"; byCat[c] = (byCat[c] || 0) + (+e.eur || 0); });
+  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  $("#expSum").innerHTML = `<div class="card mt"><div class="sm dim">${esc(ME)} — cəmi xərcim</div><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:32px">${fm(sS + sP)} €</h2><span class="mute">≈ ${fm((sS + sP) * r.azn)} ₼</span></div>
+    <div class="stat"><div><b>${fm(sS)} €</b><span>👭 ortaq payım</span></div><div><b>${fm(sP)} €</b><span>🔒 şəxsi</span></div></div>
+    ${cats.length ? `<div class="mt">${cats.map(([c, v]) => `<div class="catrow"><span>${esc(c)}</span><div class="bar grow"><i style="width:${Math.round(v / cats[0][1] * 100)}%"></i></div><b>${fm(v)} €</b></div>`).join("")}</div>` : ""}</div>`;
+  const rows = mineP.map(e => ({ e, priv: true })).concat(mineS.map(e => ({ e, priv: false }))).sort((a, b) => (b.e.ts || 0) - (a.e.ts || 0));
+  $("#mineBox").innerHTML = "";
+  $("#expList").innerHTML = `<div class="card mt"><ul class="list">${rows.length ? rows.map(({ e, priv }) => `<li><div class="grow"><b>${priv ? "🔒 " : "👭 "}${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${priv ? "şəxsi" : esc(e.payer) + " ödədi · sənin payın"} · ${fmtT(e.ts)}</span></div><span class="km">${fm(myShare(e))} €<br><span class="dim" style="font-weight:500">${fm(myShare(e) * r.azn)} ₼</span></span>${priv && !e.pending ? `<button class="btn s" data-del="${esc(e.id)}">✕</button>` : ""}</li>`).join("") : `<li class="mute">Hələ heç nə yoxdur. Yuxarıdan şəxsi xərc əlavə et (məs. 👗 paltar).</li>`}</ul></div>`;
+  bindDel();
+}
+function bindDel() {
+  $$("[data-del]").forEach(b => { let armed = false; b.onclick = async () => {
+    if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
+    try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
+}
 function setExpCur(c) { expUI.cur = c; $$("#expCur button").forEach(x => x.classList.toggle("on", x.dataset.c === c)); }
 function renderExp(force) {
   if (!expBuilt || force) {
     expBuilt = true; expUI.payer = ME || expUI.payer;
-    $("#expBody").innerHTML = `<div id="expSync"></div>
+    $("#expBody").innerHTML = `<div class="seg mt" id="expMode"><button data-m="shared">👭 Ortaq</button><button data-m="mine">👤 Mənim xərclərim</button></div><div id="expSync"></div>
+    <div id="budgetBox"></div>
     <form class="card" id="expF" autocomplete="off">
       <div class="conv"><div class="in"><input id="expA" inputmode="decimal" placeholder="Məbləğ"></div><div class="seg" id="expCur" style="flex:none"><button type="button" data-c="EUR" class="on">€</button><button type="button" data-c="AZN">₼</button></div></div>
       <div class="sm dim" id="expConv" style="margin-top:4px;min-height:18px"></div>
-      <div class="hscroll" id="expCats">${CATS.map(c => `<button type="button" class="chip" data-cat="${c}">${c}</button>`).join("")}</div>
+      <div class="hscroll" id="expCats"></div>
       <input class="inp mt" id="expD" placeholder="Qeyd (istəyə görə)">
       <button type="button" class="chip mt" id="expTf">🧾 Tax-free forması aldım</button>
-      <div class="sm dim mt">Kim ödədi?</div><div class="chips" id="expPay" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip ${expUI.payer === p ? "on" : ""}" data-p="${p}">${p}</button>`).join("")}</div>
-      <div class="sm dim mt">Kimlər üçün?</div><div class="chips" id="expParts" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip on" data-p="${p}">${p}</button>`).join("")}</div>
+      <div id="sharedOnly"><div class="sm dim mt">Kim ödədi?</div><div class="chips" id="expPay" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip ${expUI.payer === p ? "on" : ""}" data-p="${p}">${p}</button>`).join("")}</div>
+      <div class="sm dim mt">Kimlər üçün?</div><div class="chips" id="expParts" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip on" data-p="${p}">${p}</button>`).join("")}</div></div>
+      <div class="note" id="privNote" hidden>🔒 Şəxsi xərc — yalnız sən görürsən, ortaq hesablaşmaya düşmür.</div>
       <button class="btn pri wide mt" type="submit">+ Əlavə et</button>
     </form>
     <div id="expSum"></div>
+    <div id="mineBox"></div>
     <div class="tabs mt" id="expView"><button data-v="all" class="on">Hamısı</button>${PEOPLE.map(p => `<button data-v="${p}">${p}</button>`).join("")}</div>
     <div id="expList"></div>`;
     const upd = () => { const v = toNum($("#expA").value), r = R(), eur = expUI.cur === "EUR" ? v : v / r.azn;
@@ -610,24 +650,36 @@ function renderExp(force) {
     $("#expTf").onclick = () => { expUI.tf = !expUI.tf; $("#expTf").classList.toggle("on", expUI.tf); };
     $("#expA").oninput = upd;
     $$("#expCur button").forEach(b => b.onclick = () => { setExpCur(b.dataset.c); upd(); });
-    $$("#expCats .chip").forEach(b => b.onclick = () => { const on = !b.classList.contains("on"); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = on ? b.dataset.cat : ""; if (on) b.classList.add("on"); });
+    const drawCats = () => { const cs = expUI.mode === "mine" ? PCATS : CATS; $("#expCats").innerHTML = cs.map(c => `<button type="button" class="chip ${expUI.cat === c ? "on" : ""}" data-cat="${c}">${c}</button>`).join("");
+      $$("#expCats .chip").forEach(b => b.onclick = () => { const on = !b.classList.contains("on"); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = on ? b.dataset.cat : ""; if (on) b.classList.add("on"); }); };
+    const setMode = m => { if (m === "mine" && !ME) { askWho(); return; } expUI.mode = m; LS.set("expMode", m); expUI.cat = ""; drawCats();
+      $$("#expMode button").forEach(x => x.classList.toggle("on", x.dataset.m === m));
+      $("#sharedOnly").hidden = m === "mine"; $("#privNote").hidden = m !== "mine"; $("#expView").hidden = m === "mine";
+      $("#expF button[type=submit]").textContent = m === "mine" ? "+ Şəxsi xərc əlavə et" : "+ Ortaq xərc əlavə et"; renderExpData(); };
+    $$("#expMode button").forEach(b => b.onclick = () => setMode(b.dataset.m));
     $$("#expPay .chip").forEach(b => b.onclick = () => { expUI.payer = b.dataset.p; $$("#expPay .chip").forEach(x => x.classList.toggle("on", x === b)); });
     $$("#expParts .chip").forEach(b => b.onclick = () => { const p = b.dataset.p; expUI.parts = expUI.parts.includes(p) ? expUI.parts.filter(x => x !== p) : expUI.parts.concat(p); if (!expUI.parts.length) expUI.parts = [p]; $$("#expParts .chip").forEach(x => x.classList.toggle("on", expUI.parts.includes(x.dataset.p))); });
     $$("#expView button").forEach(b => b.onclick = () => { expUI.view = b.dataset.v; $$("#expView button").forEach(x => x.classList.toggle("on", x === b)); renderExpData(); });
     $("#expF").onsubmit = async e => {
       e.preventDefault(); const v = toNum($("#expA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
-      const r = R(); const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: expUI.payer, parts: expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf };
+      const r = R(), mine = expUI.mode === "mine";
+      const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: mine ? ME : expUI.payer, parts: mine ? [ME] : expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf, priv: mine, cat: expUI.cat || null };
       $("#expA").value = ""; $("#expD").value = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
-      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast("✓ Əlavə olundu — hamı görür"); }
+      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); }
       catch (err) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
       renderExpData();
     };
+    setMode(expUI.mode === "mine" && ME ? "mine" : "shared"); return;
   }
   renderExpData();
 }
 function renderExpData() {
   if (!$("#expSum")) return;
-  const list = expAll(), { tot, s } = expSum(list), r = R(), st = settle(s);
+  const all = expAll(), r = R();
+  renderBudget(all);
+  if (expUI.mode === "mine") return renderMine(all);
+  $("#mineBox").innerHTML = "";
+  const list = shared(all), { tot, s } = expSum(list), st = settle(s);
   $("#expSync").innerHTML = S.online ? `<span class="sync">☁️ Ortaq — hamı eyni siyahını görür</span>` : `<span class="sync warn">📱 Oflayn — ${S.pending.length} xərc göndərilməyi gözləyir</span>`;
   $("#expSum").innerHTML = `<div class="card mt"><div class="sm dim">Ümumi (${list.length} xərc)</div><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:32px">${fm(tot)} €</h2><span class="mute">≈ ${fm(tot * r.azn)} ₼</span></div>
    <div class="mt">${PEOPLE.map(p => { const b = s[p].paid - s[p].share; return `<div class="person"><div><b>${p}${p === ME ? " (sən)" : ""}</b><span class="s2">Payı ${fm(s[p].share)} € · Ödədi ${fm(s[p].paid)} €</span></div><div class="bal ${b > .009 ? "pos" : b < -.009 ? "neg" : ""}">${b > .009 ? "+" : ""}${fm(b)} €<span class="s2" style="font-weight:500">${b > .009 ? "alacaq" : b < -.009 ? "verəcək" : "bərabər"}</span></div></div>`; }).join("")}</div>
@@ -640,9 +692,7 @@ function renderExpData() {
   $("#expList").innerHTML = `${v !== "all" ? `<div class="card"><b>${v}</b>: öz payı ${fm(my)} € (≈ ${fm(my * r.azn)} ₼) · ödədiyi ${fm(s[v].paid)} €</div>` : ""}
    <div class="card mt"><ul class="list">${shown.length ? shown.map(e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE;
      return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
-  $$("[data-del]").forEach(b => { let armed = false; b.onclick = async () => {
-    if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
-    try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
+  bindDel();
 }
 
 /* ---------- map (Leaflet) ---------- */
@@ -678,7 +728,7 @@ $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" 
 $$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$("#filters .chip").forEach(x => x.classList.toggle("on", x === b)); drawPOI(); });
 $("#grpBtn").classList.toggle("on", !!S.share);
 $("#grpBtn").onclick = groupSheet;
-$("#hotBtn").onclick = () => { if (!S.hotel) { toast("Otel hələ yadda saxlanmayıb (Plan → Otel)"); return; } routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
+$("#hotBtn").onclick = () => { routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
 $("#meBtn").onclick = () => { if (S.me && map) map.setView([S.me.lat, S.me.lng], 16); else $("#locChip").click(); };
 $("#sheetX").onclick = () => $("#sheet").classList.remove("on");
 function openPoi(p) {
@@ -740,14 +790,27 @@ function renderMore() {
   if (moreTab === "alb") renderAlbum(B);
   if (moreTab === "pack") renderPack(B);
   if (moreTab === "hotel") {
-    B.innerHTML = `<div class="card"><h3>🏨 Otelimiz</h3>${S.hotel ? `<p class="mute">${esc(S.hotel.name || "Otel")} — hamıda görünür.</p><button class="btn pri wide" id="hGo">🧭 Otelə qayıt</button>` : `<p class="mute">Oteldə olanda aşağıdakı düyməni bas — yer hamı üçün yadda qalacaq.</p>`}
-     ${S.hotel ? `<button class="btn wide mt" id="hTaxi">🚕 Taksiyə göstər</button>` : ""}
-     <input class="inp mt" id="hName" placeholder="Otelin adı" value="${esc(S.hotel && S.hotel.name || "")}">
-     <input class="inp mt" id="hAddr" placeholder="Ünvan (məs. Kärntner Str. 1, 1010 Wien)" value="${esc(S.hotel && S.hotel.addr || "")}">
-     <button class="btn wide mt" id="hSet" ${S.me ? "" : "disabled"}>📍 İndi oteldəyəm — yadda saxla</button>${S.me ? "" : `<div class="note">GPS yeri hələ tapılmayıb.</div>`}</div>`;
-    if ($("#hTaxi")) $("#hTaxi").onclick = taxiCard;
-    if ($("#hGo")) $("#hGo").onclick = () => { goView("map"); routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
-    $("#hSet").onclick = async () => { const v = { lat: S.me.lat, lng: S.me.lng, name: $("#hName").value.trim() || "Otel", addr: $("#hAddr").value.trim() }; S.hotel = v; LS.set("hotel", v); mapHotel(); try { await api("kv.set", { key: "hotel", value: v }); toast("🏨 Otel yadda saxlandı (hamı üçün)"); } catch (e) { toast("Yadda saxlandı (yalnız bu telefonda)"); } renderMore(); };
+    const h = S.hotel || HOTEL0, d = S.me ? dist(S.me, h) : null;
+    B.innerHTML = `<div class="card"><div class="sm dim">🏨 Otelimiz</div><h3 style="font-size:21px;margin:2px 0 6px">${esc(h.name || "Otel")}</h3>
+      <div class="mute">${esc(h.addr || "")}</div>
+      ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>buradan</span></div></div>` : ""}
+      <button class="btn pri wide mt" id="hGo">🧭 Otelə qayıt</button>
+      <div class="row mt"><button class="btn grow" id="hTaxi">🚕 Taksiyə göstər</button>${h.phone ? `<a class="btn grow" href="tel:${esc(h.phone.replace(/\s/g, ""))}">📞 Zəng et</a>` : ""}</div>
+      <ul class="list mt">
+        ${h.ci ? `<li><span>🔑</span><div class="grow"><b>Check-in</b><span class="s2">${esc(h.ci)}</span></div></li>` : ""}
+        ${h.co ? `<li><span>🧳</span><div class="grow"><b>Check-out</b><span class="s2">${esc(h.co)}</span></div></li>` : ""}
+      </ul>
+      <div class="note">🔐 Self check-in otelidir: giriş kodu/təlimat adətən Booking mesajı ilə gəlir — gəlməzdən əvvəl Booking-də yoxla. 12:00–13:00-da çatırsınız, check-in 15:00-dandır: çantaları saxlamağı otelə Booking-dən yaz. ${h.ci && /21/.test(h.ci) ? "Check-in 21:00-dək göstərilib — gec gələcəksinizsə otelə xəbər ver." : ""}</div></div>
+     <details class="card mt"><summary class="sm mute">✏️ Otel məlumatını düzəlt</summary>
+      <input class="inp mt" id="hName" placeholder="Otelin adı" value="${esc(h.name || "")}">
+      <input class="inp mt" id="hAddr" placeholder="Ünvan" value="${esc(h.addr || "")}">
+      <button class="btn wide mt" id="hSave">💾 Yadda saxla</button>
+      <button class="btn wide mt" id="hSet" ${S.me ? "" : "disabled"}>📍 İndi oteldəyəm — xəritədə yerini dəqiqləşdir</button></details>`;
+    const back = () => { goView("map"); routeTo({ id: "hotel", name: h.name || "Otel", lat: h.lat, lng: h.lng, cat: "tarix", d: "" }); };
+    $("#hGo").onclick = back; $("#hTaxi").onclick = taxiCard;
+    const save = async v => { S.hotel = v; LS.set("hotel", v); mapHotel(); try { await api("kv.set", { key: "hotel", value: v }); toast("🏨 Yadda saxlandı (hamı üçün)"); } catch (e) { toast("Yadda saxlandı (yalnız bu telefonda)"); } renderMore(); };
+    $("#hSave").onclick = () => save(Object.assign({}, h, { name: $("#hName").value.trim() || h.name, addr: $("#hAddr").value.trim() }));
+    $("#hSet").onclick = () => save(Object.assign({}, h, { lat: S.me.lat, lng: S.me.lng }));
   }
 }
 const PACK = [["Pasport (etibarlılıq 3+ ay)", "doc"], ["Şengen vizası / uçuş biletləri", "doc"], ["Tibbi sığorta", "doc"], ["Otel təsdiqi (telefonda)", "doc"], ["Bank kartı + bir az nağd avro", "pul"], ["Telefonda internet (roaming və ya eSIM)", "tel"], ["Powerbank + adapter lazım deyil (Avstriyada da eyni rozetka)", "tel"], ["Bu tətbiq ana ekranda + yerə icazə verilib", "tel"], ["İsti palto, şərf, əlcək (2–7°)", "geyim"], ["Rahat, su keçirməyən ayaqqabı", "geyim"], ["Kiçik çətir", "geyim"], ["Lazımi dərmanlar", "sağlıq"], ["Alış-veriş üçün boş yer çamadanda 😄", "geyim"]];
@@ -764,7 +827,7 @@ function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" +
 async function sharePhoto(thumb, name, poi) { if (!thumb || !S.code) return; try { await api("photo.add", { thumb, name: name || "", poi: poi || "", who: ME || "", ts: Date.now() }); } catch (e) {} }
 function taxiCard() {
   const h = S.hotel || {};
-  $("#bigBox").innerHTML = `<div class="sm dim">🚕 Bitte bringen Sie mich zu:</div><div class="taxi">${esc(h.name || "Hotel")}</div>${h.addr ? `<div style="font-size:20px;font-weight:600">${esc(h.addr)}</div>` : ""}<div class="sm mute mt">“Zəhmət olmasa məni bu ünvana aparın”</div>
+  $("#bigBox").innerHTML = `<div class="sm dim">🚕 Bitte bringen Sie mich zu:</div><div class="taxi">${esc(h.name || "Hotel")}</div>${h.addr ? `<div style="font-size:20px;font-weight:600">${esc(h.addr)}</div>` : ""}<div class="sm mute mt">“Zəhmət olmasa məni bu ünvana aparın”</div>${h.phone ? `<div class="sm mt">📞 <a href="tel:${esc(h.phone.replace(/\s/g, ""))}">${esc(h.phone)}</a></div>` : ""}
    <div class="row mt"><a class="btn grow" href="https://www.google.com/maps/search/?api=1&query=${h.lat},${h.lng}" target="_blank" rel="noopener">📍 Xəritə</a><button class="btn pri grow" id="bbX">Oldu</button></div>`;
   $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on");
 }

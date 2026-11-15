@@ -124,7 +124,8 @@ const PLAN = [
  {d:"2026-11-17",t:"17 noyabr",w:"Çərşənbə axşamı",title:"Gəliş və Köhnə şəhər",items:[
   ["11:00","Vyana hava limanına eniş","Pasport nəzarəti və baqaj üçün təxminən 45–60 dəqiqə ayır.",null,1],
   ["12:00","CAT avtobusu → Wien Mitte","Avtobus terminalı Terminal 3-ün qarşısındadır. Hər 12 dəqiqədən bir gedir, yol təxminən 21 dəqiqədir, bilet adambaşı 14,90 €. Ucuz variant: Railjet qatarı ilə Hauptbahnhof-a.","u-landstrasse",1],
-  ["13:00","Otelə çantaları qoy","Check-in adətən saat 14–15-dən sonra olur. Çantaları resepsiyada saxlamağı xahiş et.",null],
+  ["12:40","Wien Mitte → otel (piyada ~10 dəq)","HOME1 – Lumes Boutique Hotel, Weihburggasse 18-20. Wien Mitte-dən təxminən 700 m-dir.","hotel"],
+  ["13:00","Otelə çantaları qoy","Check-in 15:00-dandır, otel self check-in-dir. Çantaları saxlamağı əvvəlcədən Booking-dən yaz, giriş təlimatını Booking mesajlarında yoxla.","hotel"],
   ["13:30","Nahar: Dom Schnitzel ★4.8","Stephansdomun yanındadır. Alternativ: Figlmüller ★4.3 (rezerv lazımdır).","domschnitzel"],
   ["15:00","Stephansdom + Stephansplatz bazarı","Kafedralın içi pulsuzdur. Qüllə və katakombalar ödənişlidir. Bazar saat 14:00-da açılır.","stephansdom"],
   ["16:30","Graben → Kohlmarkt → Hofburg","Axşam işıqları altında gəzinti. Yol üstündə Demel ★4.2-də Kaiserschmarrn sına.","graben"],
@@ -152,8 +153,8 @@ const PLAN = [
   ["19:30","Vida şam yeməyi: Plachutta ★4.3 və ya Melker Stiftskeller ★4.6","Hər ikisi üçün rezerv et.","plachutta"],
  ]},
  {d:"2026-11-20",t:"20 noyabr",w:"Cümə",title:"Dönüş günü",items:[
-  ["07:30","Səhər yeməyi və check-out","Çamadanları axşamdan yığ.",null],
-  ["08:45","Otel → Wien Mitte (Marxergasse 1b)","CAT avtobusunun dayanacağı buradadır. Şəhərdə baqaj təhvili hazırda işləmir.","u-landstrasse",1],
+  ["07:30","Səhər yeməyi və check-out","Check-out 11:00-dək. Çamadanları axşamdan yığ, açarı/kartı təlimata görə qaytar.","hotel"],
+  ["08:45","Otel → Wien Mitte (piyada ~10 dəq)","Weihburggasse-dən Wien Mitte (Marxergasse 1b) təxminən 700 m-dir. CAT avtobusunun dayanacağı buradadır. Şəhərdə baqaj təhvili hazırda işləmir.","u-landstrasse",1],
   ["09:10","CAT avtobusu ilə hava limanına","Hər 12 dəqiqədən bir gedir, yol təxminən 21–25 dəqiqədir. Tıxac ehtimalına görə bu avtobusdan gecikmə.","u-landstrasse",1],
   ["09:40","Hava limanı → Terminal 1","Avtobus Terminal 3-ün qarşısında saxlayır. Terminal 1-ə piyada 5–10 dəqiqədir.",null],
   ["10:00","Terminal 1: qeydiyyat və pasport nəzarəti","Şengendən çıxışda növbə ola bilər. Tax Free qaytarırsansa, əlavə 20 dəqiqə ayır.",null,1],

@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
       case "sync": {
         const [ex, kv, pl] = await Promise.all([
-          sb.from("expenses").select("*").order("ts", { ascending: false }).limit(1000),
+          sb.from("expenses").select("*").or(`priv.eq.false,by.eq.${PEOPLE.includes(b.who) ? b.who : "-"}`).order("ts", { ascending: false }).limit(1500),
           sb.from("kv").select("key,value,updated_at"),
           sb.from("price_log").select("id", { count: "exact", head: true }),
         ]);
@@ -68,11 +68,13 @@ Deno.serve(async (req) => {
         const eur = Number(r.eur);
         const parts = Array.isArray(r.parts) ? r.parts.filter((p: string) => PEOPLE.includes(p)) : [];
         if (!(eur > 0 && eur < 100000) || !PEOPLE.includes(r.payer) || !parts.length) return json({ error: "invalid" }, 400);
+        if (r.priv === true && !(PEOPLE.includes(r.by) && r.payer === r.by)) return json({ error: "invalid" }, 400);
         const row = {
           d: String(r.d ?? "Xərc").slice(0, 80), eur: Math.round(eur * 100) / 100,
           orig: r.orig != null ? Math.round(Number(r.orig) * 100) / 100 : null,
           cur: r.cur === "AZN" ? "AZN" : "EUR", payer: r.payer, parts,
           by: String(r.by ?? "").slice(0, 20), ts: Number(r.ts) || Date.now(), tf: r.tf === true,
+          priv: r.priv === true, cat: r.cat ? String(r.cat).slice(0, 30) : null,
         };
         const { data, error } = await sb.from("expenses").insert(row).select().single();
         if (error) throw error;
@@ -97,7 +99,7 @@ Deno.serve(async (req) => {
           if (v !== null && !(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
         } else return json({ error: "readonly" }, 400);
         if (v === null) { await sb.from("kv").delete().eq("key", key); return json({ ok: true }); }
-        const val = key === "hotel" ? { lat: v.lat, lng: v.lng, name: String(v.name ?? "").slice(0, 80), addr: String(v.addr ?? "").slice(0, 160) }
+        const val = key === "hotel" ? { lat: v.lat, lng: v.lng, name: String(v.name ?? "").slice(0, 80), addr: String(v.addr ?? "").slice(0, 160), phone: String(v.phone ?? "").slice(0, 30), ci: String(v.ci ?? "").slice(0, 30), co: String(v.co ?? "").slice(0, 30), note: String(v.note ?? "").slice(0, 300) }
           : { lat: v.lat, lng: v.lng, acc: Number(v.acc) || 0, ts: Date.now() };
         const { error } = await sb.from("kv").upsert({ key, value: val, updated_at: new Date().toISOString() });
         if (error) throw error;
