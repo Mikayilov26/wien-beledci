@@ -232,6 +232,8 @@ nav button.on{color:var(--red)}
 .catrow b{width:70px;text-align:right;flex:none}
 .neg{color:#C8102E}
 details summary{cursor:pointer;list-style:none}
+.taxi-box{background:#FFF8E6;border-radius:14px;padding:12px}
+.sumcard .stat{margin-top:6px}
 </style>
 </head>
 <body>
@@ -262,6 +264,7 @@ details summary{cursor:pointer;list-style:none}
           <div class="chips" id="convQuick" style="margin-top:8px"><button class="chip" data-q="5">5</button><button class="chip" data-q="10">10</button><button class="chip" data-q="20">20</button><button class="chip" data-q="50">50</button><button class="chip" data-q="100">100</button></div>
         </div>
         <div id="todaySpend" style="margin-top:8px"></div>
+        <div id="daySum"></div>
         <div class="tiles">
           <label class="tile hero"><span class="e">📷</span><div><b>Yeri tanı</b><span>Şəkil çək — tarixini danışım</span></div><input type="file" accept="image/*" capture="environment" id="camIn"></label>
           <label class="tile"><span class="e">🛍</span><b>Qiymət</b><span>Bakı və Türkiyədə neçəyədir?</span><input type="file" accept="image/*" capture="environment" id="priceIn"></label>

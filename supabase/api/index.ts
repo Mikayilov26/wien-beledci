@@ -89,6 +89,25 @@ Deno.serve(async (req) => {
         if (error) throw error;
         return json({ row: data });
       }
+      case "exp.upd": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const { data: old } = await sb.from("expenses").select("priv,by").eq("id", String(b.id)).maybeSingle();
+        if (!old) return json({ error: "not_found" }, 404);
+        if (old.priv && old.by !== who) return json({ error: "forbidden" }, 403);
+        const r = b.row ?? {};
+        const eur = Number(r.eur);
+        const parts = Array.isArray(r.parts) ? r.parts.filter((p: string) => PEOPLE.includes(p)) : [];
+        if (!(eur > 0 && eur < 100000) || !PEOPLE.includes(r.payer) || !parts.length) return json({ error: "invalid" }, 400);
+        if (old.priv && (r.payer !== who || parts.length !== 1 || parts[0] !== who)) return json({ error: "invalid" }, 400);
+        const upd = {
+          d: String(r.d ?? "Xərc").slice(0, 80), eur: Math.round(eur * 100) / 100,
+          orig: r.orig != null ? Math.round(Number(r.orig) * 100) / 100 : null, cur: r.cur === "AZN" ? "AZN" : "EUR",
+          payer: r.payer, parts, tf: r.tf === true, cat: r.cat ? String(r.cat).slice(0, 30) : null,
+        };
+        const { data, error } = await sb.from("expenses").update(upd).eq("id", String(b.id)).select().single();
+        if (error) throw error;
+        return json({ row: data });
+      }
       case "exp.tf": {
         const { error } = await sb.from("expenses").update({ tf: b.tf === true }).eq("id", String(b.id));
         if (error) throw error;

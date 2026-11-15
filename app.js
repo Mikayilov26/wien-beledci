@@ -64,6 +64,19 @@ const walkMin = d => Math.max(1, Math.round(walkM(d) / 75));
 const fmtKm = m => m < 1000 ? Math.round(m / 10) * 10 + " m" : (m / 1000).toFixed(1).replace(".", ",") + " km";
 const inVienna = (lat, lng) => lat > 47.9 && lat < 48.45 && lng > 16.0 && lng < 16.75;
 const nearest = (pt, n, f) => POI.filter(p => !f || f(p)).map(p => ({ p, d: dist(pt, p) })).sort((a, b) => a.d - b.d).slice(0, n);
+const taxiEst = m => { const km = m * 1.25 / 1000; const lo = Math.max(8, 4 + km * 1.6), hi = Math.max(11, 6 + km * 2.4); return [Math.round(lo), Math.round(hi)]; };
+const taxiMin = m => Math.max(4, Math.round(m * 1.25 / 1000 / 18 * 60 + 3));
+const uberLink = d => `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${d.lat}&dropoff[longitude]=${d.lng}&dropoff[nickname]=${encodeURIComponent(short(d.name || "Hədəf").replace(/^🏨 /, ""))}`;
+function taxiBlock(d, meters, primary) {
+  const [lo, hi] = taxiEst(meters);
+  return `<div class="taxi-box mt"><div style="display:flex;justify-content:space-between;align-items:baseline"><b>🚕 Taksi</b><span><b>~${taxiMin(meters)} dəq</b> · ≈ ${lo}–${hi} € <span class="dim sm">(3 nəfərə ≈ ${fm(lo / 3, 0)}–${fm(hi / 3, 0)} € adambaşı)</span></span></div>
+   <div class="row mt"><a class="btn ${primary ? "pri" : ""} grow" href="${uberLink(d)}" target="_blank" rel="noopener">Uber ilə çağır</a><a class="btn grow" href="tel:+43140100">📞 Taxi 40100</a><button class="btn" data-taxicard="1" aria-label="Sürücüyə göstər">🪧</button></div>
+   <div class="sm dim" style="margin-top:6px">Uber/Bolt qiyməti əvvəlcədən göstərir. Küçə taksisi taksometrlə işləyir — rəqəm təxminidir.</div></div>`;
+}
+function destCard(d) {
+  $("#bigBox").innerHTML = `<div class="sm dim">🚕 Bitte bringen Sie mich zu:</div><div class="taxi">${esc(short(d.name || "").replace(/^🏨 /, ""))}</div>${d.addr || d.d ? `<div style="font-size:18px;font-weight:600">${esc(d.addr || "")}</div>` : ""}<div class="sm mute mt">“Zəhmət olmasa məni bura aparın”</div><button class="btn pri wide mt" id="bbX">Oldu</button>`;
+  $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on");
+}
 const gDir = (d, mode) => `https://www.google.com/maps/dir/?api=1${S.me ? `&origin=${S.me.lat},${S.me.lng}` : ""}&destination=${d.lat},${d.lng}&travelmode=${mode || "walking"}`;
 const gPlace = p => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(short(p.name) + " Wien")}${p.pid ? `&query_place_id=${p.pid}` : ""}`;
 
@@ -71,9 +84,39 @@ function setMe(lat, lng, src, acc) {
   if (!inVienna(lat, lng)) { if (src === "gps") { S.gps = "away"; renderLoc(); } return false; }
   const n = nearest({ lat, lng }, 1)[0];
   S.me = { lat, lng, src, acc: acc || 0, ts: Date.now(), label: n && n.d < 400 ? short(n.p.name) : "Vyana" };
-  if (src === "gps") S.gps = "on";
+  if (src === "gps") { S.gps = "on"; track(lat, lng, acc); }
   renderLoc(); mapMe(); if (src === "gps") pushLoc(); return true;
 }
+/* ---------- daily tracking for the evening summary (stays on this phone) ---------- */
+let lastFix = LS.get("lastFix", null);
+function track(lat, lng, acc) {
+  if ((acc || 99) > 40) return;
+  const day = vNow().date, k = "trk." + day, t = LS.get(k, { m: 0, v: [] });
+  if (lastFix && lastFix.day === day) { const d = dist(lastFix, { lat, lng }); if (d < 15) return; if (d < 1500 && Date.now() - lastFix.ts < 20 * 60000) t.m += d; }
+  lastFix = { lat, lng, ts: Date.now(), day }; LS.set("lastFix", lastFix);
+  const n = nearest({ lat, lng }, 1, p => p.cat !== "metro")[0];
+  if (n && n.d < 60 && !t.v.includes(n.p.id)) t.v.push(n.p.id);
+  LS.set(k, t);
+}
+function daySummary(date) {
+  const t = LS.get("trk." + date, { m: 0, v: [] }), r = R();
+  const spent = ME ? expAll().filter(e => vDate(e.ts) === date).reduce((a, e) => a + myShare(e), 0) : 0;
+  const ph = (S.photos || []).filter(p => vDate(p.ts) === date).length + S.album.filter(a => vDate(a.ts) === date && !(S.photos || []).some(p => p.thumb === a.img)).length;
+  return { km: t.m / 1000, places: t.v.map(id => byId[id]).filter(Boolean), spent, spentAzn: spent * r.azn, photos: ph };
+}
+function summaryHTML(date, title) {
+  const s = daySummary(date);
+  return `<div class="card mt sumcard"><div class="sm dim">${title}</div>
+   <div class="stat"><div><b>${s.km.toFixed(1).replace(".", ",")} km</b><span>🚶 piyada</span></div><div><b>${fm(s.spent)} €</b><span>💶 xərcin</span></div><div><b>${s.photos}</b><span>📷 şəkil</span></div></div>
+   ${s.places.length ? `<div class="sm mt">📍 ${s.places.slice(0, 8).map(p => esc(short(p.name))).join(" · ")}${s.places.length > 8 ? ` +${s.places.length - 8}` : ""}</div>` : ""}
+   <button class="btn s mt" data-share="${date}">📤 Paylaş</button></div>`;
+}
+function shareSummary(date) {
+  const s = daySummary(date);
+  const txt = `Vyana, ${fmtT(Date.parse(date + "T12:00:00+01:00")).split(",")[0]} 🇦🇹\n🚶 ${s.km.toFixed(1).replace(".", ",")} km · 💶 ${fm(s.spent)} € · 📷 ${s.photos} şəkil` + (s.places.length ? `\n📍 ${s.places.map(p => short(p.name)).join(", ")}` : "");
+  if (navigator.share) navigator.share({ text: txt }).catch(() => {}); else { try { navigator.clipboard.writeText(txt); toast("Kopyalandı"); } catch (e) {} }
+}
+
 /* ---------- group location (opt-in) ---------- */
 let lastPush = 0;
 async function pushLoc(force) {
@@ -277,6 +320,9 @@ function renderHome() {
     (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`;
   renderConv(); renderInstall();
   const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
+  const tripDay = now.date >= "2026-11-17" && now.date <= "2026-11-20";
+  $("#daySum").innerHTML = tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : "";
+  $$("#daySum [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share));
   $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
@@ -397,7 +443,7 @@ function renderStory(fast) {
   <div class="hscroll mt"><button class="chip" data-q="Daha ətraflı danış, maraqlı əhvalatlar əlavə et.">📖 Daha çox</button><button class="chip" data-q="İçəri girmək olar? Bilet və saatlar? Dəqiq bilmirsənsə rəsmi saytı yoxlamağı de.">🎟 Bilet</button><button class="chip" data-q="Ən gözəl foto bucağı haradadır?">📸 Foto</button></div>
   <div id="chat">${c.history.map(m => `<div class="msg ${m.role === "user" ? "me" : "ai"}">${esc(m.content)}</div>`).join("")}</div>
   <form class="ask" id="askF"><input class="inp" id="askI" placeholder="Sual ver…" autocomplete="off"><button class="btn pri">→</button></form>
-  <div class="row mt">${p ? `<button class="btn" id="goP">🧭 Get</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}<button class="btn" id="nextP">✨ Buradan hara?</button></div>`;
+  <div class="row mt">${p && TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}${p ? `<button class="btn" id="goP">🧭 Get</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}<button class="btn" id="nextP">✨ Buradan hara?</button></div>`;
   bindBack();
   $("#spk").onclick = () => speaking ? stopSpeak() : speak((c.name || "") + ". " + (c.story || "") + " " + (c.facts || []).join(". "));
   $$("#result [data-q]").forEach(b => b.onclick = () => ask(b.dataset.q));
@@ -638,10 +684,36 @@ function renderMine(all) {
     ${cats.length ? `<div class="mt">${cats.map(([c, v]) => `<div class="catrow"><span>${esc(c)}</span><div class="bar grow"><i style="width:${Math.round(v / cats[0][1] * 100)}%"></i></div><b>${fm(v)} €</b></div>`).join("")}</div>` : ""}</div>`;
   const rows = mineP.map(e => ({ e, priv: true })).concat(mineS.map(e => ({ e, priv: false }))).sort((a, b) => (b.e.ts || 0) - (a.e.ts || 0));
   $("#mineBox").innerHTML = "";
-  $("#expList").innerHTML = `<div class="card mt"><ul class="list">${rows.length ? rows.map(({ e, priv }) => `<li><div class="grow"><b>${priv ? "🔒 " : "👭 "}${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${priv ? "şəxsi" : esc(e.payer) + " ödədi · sənin payın"} · ${fmtT(e.ts)}</span></div><span class="km">${fm(myShare(e))} €<br><span class="dim" style="font-weight:500">${fm(myShare(e) * r.azn)} ₼</span></span>${priv && !e.pending ? `<button class="btn s" data-del="${esc(e.id)}">✕</button>` : ""}</li>`).join("") : `<li class="mute">Hələ heç nə yoxdur. Yuxarıdan şəxsi xərc əlavə et (məs. 👗 paltar).</li>`}</ul></div>`;
+  $("#expList").innerHTML = `<div class="card mt"><ul class="list">${rows.length ? rows.map(({ e, priv }) => `<li><div class="grow"><b>${priv ? "🔒 " : "👭 "}${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${priv ? "şəxsi" : esc(e.payer) + " ödədi · sənin payın"} · ${fmtT(e.ts)}</span></div><span class="km">${fm(myShare(e))} €<br><span class="dim" style="font-weight:500">${fm(myShare(e) * r.azn)} ₼</span></span>${priv && !e.pending ? `<button class="btn s" data-ed="${esc(e.id)}" aria-label="Düzəlt">✎</button><button class="btn s" data-del="${esc(e.id)}">✕</button>` : ""}</li>`).join("") : `<li class="mute">Hələ heç nə yoxdur. Yuxarıdan şəxsi xərc əlavə et (məs. 👗 paltar).</li>`}</ul></div>`;
   bindDel();
 }
+function editExp(id) {
+  const e = S.expenses.find(x => x.id === id); if (!e) return;
+  const st = { payer: e.payer, parts: (e.parts && e.parts.length ? e.parts : PEOPLE).slice(), tf: !!e.tf, cur: e.cur === "AZN" ? "AZN" : "EUR" };
+  const amt = st.cur === "AZN" && e.orig ? e.orig : e.eur;
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">✎ Xərci düzəlt${e.priv ? " 🔒" : ""}</h3>
+   <div class="conv mt"><div class="in"><input id="edA" inputmode="decimal" value="${String(amt).replace(".", ",")}"></div><div class="seg" id="edCur" style="flex:none"><button type="button" data-c="EUR">€</button><button type="button" data-c="AZN">₼</button></div></div>
+   <input class="inp mt" id="edD" value="${esc(e.d)}">
+   ${e.priv ? "" : `<div class="sm dim mt" style="text-align:left">Kim ödədi?</div><div class="chips" id="edPay" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip" data-p="${p}">${p}</button>`).join("")}</div>
+   <div class="sm dim mt" style="text-align:left">Kimlər üçün?</div><div class="chips" id="edParts" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip" data-p="${p}">${p}</button>`).join("")}</div>`}
+   <button type="button" class="chip mt" id="edTf">🧾 Tax-free</button>
+   <div class="row mt"><button class="btn grow" id="edX">Ləğv et</button><button class="btn pri grow" id="edOk">💾 Yadda saxla</button></div>`;
+  const draw = () => { $$("#edCur button").forEach(x => x.classList.toggle("on", x.dataset.c === st.cur)); $$("#edPay .chip").forEach(x => x.classList.toggle("on", x.dataset.p === st.payer)); $$("#edParts .chip").forEach(x => x.classList.toggle("on", st.parts.includes(x.dataset.p))); $("#edTf").classList.toggle("on", st.tf); };
+  $$("#edCur button").forEach(b => b.onclick = () => { st.cur = b.dataset.c; draw(); });
+  $$("#edPay .chip").forEach(b => b.onclick = () => { st.payer = b.dataset.p; draw(); });
+  $$("#edParts .chip").forEach(b => b.onclick = () => { const p = b.dataset.p; st.parts = st.parts.includes(p) ? st.parts.filter(x => x !== p) : st.parts.concat(p); if (!st.parts.length) st.parts = [p]; draw(); });
+  $("#edTf").onclick = () => { st.tf = !st.tf; draw(); };
+  $("#edX").onclick = () => $("#bigModal").classList.remove("on");
+  $("#edOk").onclick = async () => {
+    const v = toNum($("#edA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
+    const r = R(), row = { d: $("#edD").value.trim() || "Xərc", eur: Math.round((st.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: st.cur, payer: st.payer, parts: st.parts, tf: st.tf, cat: e.cat || null };
+    try { const j = await api("exp.upd", { id, row }); const i = S.expenses.findIndex(x => x.id === id); if (i >= 0) S.expenses[i] = j.row; LS.set("expCache", S.expenses); $("#bigModal").classList.remove("on"); toast("✓ Düzəldildi"); renderExpData(); }
+    catch (err) { toast("Alınmadı: " + aiErr(err)); }
+  };
+  draw(); $("#bigModal").classList.add("on");
+}
 function bindDel() {
+  $$("[data-ed]").forEach(b => b.onclick = () => editExp(b.dataset.ed));
   $$("[data-del]").forEach(b => { let armed = false; b.onclick = async () => {
     if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
     try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
@@ -720,7 +792,7 @@ function renderExpData() {
   const ft = fmtT;
   $("#expList").innerHTML = `${v !== "all" ? `<div class="card"><b>${v}</b>: öz payı ${fm(my)} € (≈ ${fm(my * r.azn)} ₼) · ödədiyi ${fm(s[v].paid)} €</div>` : ""}
    <div class="card mt"><ul class="list">${shown.length ? shown.map(e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE;
-     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
+     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-ed="${esc(e.id)}" aria-label="Düzəlt">✎</button><button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
   bindDel();
 }
 
@@ -751,6 +823,26 @@ function mapMe() { if (!map || !meLayer) return; meLayer.clearLayers(); if (!S.m
   L.marker([S.me.lat, S.me.lng], { icon: L.divIcon({ className: "", html: '<div class="medot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false }).addTo(meLayer); }
 function mapAlerts() { if (!map || !alertLayer) return; alertLayer.clearLayers(); todaysAlerts().filter(a => a.lat && a.level !== "info").forEach(a => L.circle([a.lat, a.lng], { radius: a.r || 300, color: "#C8102E", weight: 2, dashArray: "6 4", fillOpacity: .12 }).bindTooltip("⚠ " + a.title).addTo(alertLayer)); }
 function mapHotel() { if (!map || !hotelLayer) return; hotelLayer.clearLayers(); if (S.hotel) L.marker([S.hotel.lat, S.hotel.lng], { icon: L.divIcon({ className: "", html: '<div style="font-size:26px">🏨</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).on("click", () => routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "Otelimiz" })).addTo(hotelLayer); }
+/* offline tiles: prefetch central Vienna into a cache the service worker serves from */
+const TILE_AREAS = [[48.195, 16.350, 48.222, 16.395, 13, 16], [48.200, 16.358, 48.214, 16.385, 17, 17], [48.176, 16.302, 48.190, 16.325, 14, 16], [48.200, 16.380, 48.220, 16.402, 15, 16]];
+const t2x = (lng, z) => Math.floor((lng + 180) / 360 * 2 ** z), t2y = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
+function tileList() {
+  const ret = (window.devicePixelRatio || 1) > 1 ? "@2x" : "", out = new Set();
+  TILE_AREAS.forEach(([la1, lo1, la2, lo2, z1, z2]) => { for (let z = z1; z <= z2; z++) for (let x = t2x(lo1, z); x <= t2x(lo2, z); x++) for (let y = t2y(la2, z); y <= t2y(la1, z); y++) out.add(`https://${"abcd"[Math.abs(x + y) % 4]}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${ret}.png`); });
+  return [...out];
+}
+let offBusy = false;
+async function offlineMap(onProg) {
+  if (offBusy || !("caches" in window)) return false; offBusy = true;
+  try {
+    const c = await caches.open("tiles-v1"), list = tileList(); let done = 0;
+    for (let i = 0; i < list.length; i += 6) {
+      await Promise.all(list.slice(i, i + 6).map(async u => { try { if (!(await c.match(u))) { const r = await fetch(u, { mode: "cors" }); if (r.ok) await c.put(u, r); } } catch (e) {} done++; }));
+      onProg && onProg(done, list.length);
+    }
+    LS.set("offMap", Date.now()); return true;
+  } finally { offBusy = false; }
+}
 function mapFriends() { if (!map || !frLayer) return; frLayer.clearLayers(); friendsList().forEach(f => L.marker([f.lat, f.lng], { icon: L.divIcon({ className: "", html: `<div class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</div>`, iconSize: null, iconAnchor: [12, 12] }) }).on("click", () => groupSheet()).addTo(frLayer)); }
 const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["metro", "Ⓜ Metro"]];
 $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("");
@@ -766,7 +858,8 @@ function openPoi(p) {
    ${p.g && p.g < MIN_R ? `<div class="note" style="color:#B5651D">Reytinq aşağıdır, tövsiyə etmirəm.</div>` : ""}${an ? `<div class="alert mt"><span>⚠️</span><div><b>${esc(an.title)}</b><span class="mute">${esc(an.detail)}</span></div></div>` : ""}
    <p class="mute" style="margin:8px 0">${esc(p.d)}</p>${price(p) ? `<div class="sm">💶 ${esc(price(p))}</div>` : ""}
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
-   <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button><button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
+   ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}
+   <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
   $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
 function segOff(a, b, pt) { const kx = 111320 * Math.cos(48.2 * Math.PI / 180), ky = 111320; const ax = a.lng * kx, ay = a.lat * ky, bx = b.lng * kx, by = b.lat * ky, px = pt.lng * kx, py = pt.lat * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
@@ -788,12 +881,15 @@ async function routeTo(p) {
   const blocks = todaysAlerts().filter(a => a.lat && a.level !== "info" && lineOff(line, a) <= (a.r || 300));
   const far = meters > 2200, cats = c => along.filter(a => a.x.cat === c).length;
   $("#sheetBody").innerHTML = `<h3 style="font-size:21px;margin-right:36px">→ ${esc(short(p.name))}</h3>
-   ${blocks.map(a => `<div class="alert mt"><span>⚠️</span><div><b>Yolda: ${esc(a.title)}</b><span class="mute">${esc(a.detail)} Metro ilə get.</span></div></div>`).join("")}
-   <div class="stat"><div><b>${mins} dəq</b><span>piyada</span></div><div><b>${fmtKm(meters)}</b><span>${real ? "real yol" : "təxmini"}</span></div>${far ? `<div><b>🚇</b><span>metro daha tez</span></div>` : ""}</div>
-   <div class="row"><a class="btn pri" href="${gDir(p, blocks.length || far ? "transit" : "walking")}" target="_blank" rel="noopener">Google Maps ilə get</a><a class="btn" href="${gDir(p, blocks.length || far ? "walking" : "transit")}" target="_blank" rel="noopener">${blocks.length || far ? "🚶 Piyada" : "🚇 Metro"}</a></div>
+   ${blocks.map(a => `<div class="alert mt"><span>⚠️</span><div><b>Yolda: ${esc(a.title)}</b><span class="mute">${esc(a.detail)} Taksi bu yeri dolanıb keçəcək.</span></div></div>`).join("")}
+   <div class="stat"><div><b>${mins} dəq</b><span>piyada</span></div><div><b>${fmtKm(meters)}</b><span>${real ? "real yol" : "təxmini"}</span></div>${far ? `<div><b>🚕</b><span>taksi daha rahat</span></div>` : ""}</div>
+   ${far || blocks.length || vNow().mins >= 21 * 60 ? taxiBlock(p, meters, true) : ""}
+   <div class="row mt"><a class="btn ${far || blocks.length ? "" : "pri"}" href="${gDir(p, "walking")}" target="_blank" rel="noopener">🚶 Piyada (Google)</a><a class="btn" href="${gDir(p, "transit")}" target="_blank" rel="noopener">🚌 Avtobus/metro</a></div>
+   ${far || blocks.length || vNow().mins >= 21 * 60 ? "" : taxiBlock(p, meters, false)}
    <div class="chips mt">${[["tarix", "🏛"], ["kilse", "⛪"], ["muzey", "🖼"], ["yemek", "🍽"], ["bazar", "🎄"], ["metro", "Ⓜ"]].map(([c, e]) => `<span class="pill" style="${cats(c) ? "" : "opacity:.4"}">${e} ${cats(c) ? "✓ " + cats(c) : "✗"}</span>`).join("")}</div>
    ${along.length ? `<div class="sm dim mt">Yol boyunca:</div><ul class="list">${along.map(a => `<li data-p="${a.x.id}" style="cursor:pointer;padding:9px 0"><span class="dot" style="background:${CAT[a.x.cat].c}"></span><div class="grow"><b style="font-weight:600">${esc(short(a.x.name))}</b> ${a.x.g ? `<span class="rt">★${a.x.g}</span>` : ""}</div><span class="dim sm">${fmtKm(a.d)}</span></li>`).join("")}</ul>` : ""}`;
   $$("#sheetBody [data-p]").forEach(li => li.onclick = () => openPoi(byId[li.dataset.p]));
+  $$("#sheetBody [data-taxicard]").forEach(b => b.onclick = () => p.id === "hotel" ? taxiCard() : destCard(p));
 }
 
 /* ---------- plan & more ---------- */
@@ -806,6 +902,7 @@ function renderPlan() {
   $("#planBody").innerHTML = `<h2 style="font-size:23px">${esc(d.title)}</h2><div class="sm dim" style="margin-bottom:10px">${d.t}, ${d.w}</div>
    <div class="card"><ul class="tl">${d.items.map((it, k) => { const p = it[3] ? byId[it[3]] : null; return `<li class="${k === nextIdx ? "now" : ""}"><div class="t">${it[0]}</div><div class="x2"><b>${esc(it[1])}</b><span>${esc(it[2])}</span>${p ? `<div style="margin-top:6px"><a class="lnk" data-route="${p.id}">🧭 Get</a><a class="lnk" data-tell="${p.id}">🔊 Hekayə</a>${p.pid ? `<a class="lnk" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}</div>` : ""}</div></li>`; }).join("")}</ul></div>
    ${planDay === 3 ? `<div class="alert mt"><span>✈️</span><div><b>Uçuş 12:00, Terminal 1</b><span class="mute">10:00-da hava limanında ol. CAT avtobusu Wien Mitte (Marxergasse 1b). Wien Mitte S-Bahn bağlıdır, U3/U4 işləyir.</span></div></div>` : ""}`;
+  if (d.d <= now.date) { $("#planBody").insertAdjacentHTML("beforeend", summaryHTML(d.d, d.d === now.date ? "📊 Bu gün indiyədək" : "📊 Günün xülasəsi")); $$("#planBody [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share)); }
   $$("#planBody [data-route]").forEach(a => a.onclick = () => { goView("map"); routeTo(byId[a.dataset.route]); });
   $$("#planBody [data-tell]").forEach(a => a.onclick = () => tellAbout(byId[a.dataset.tell]));
 }
@@ -815,7 +912,15 @@ function renderMore() {
   const plan = moreTab === "plan"; $("#morePlan").hidden = !plan; $("#moreBody").hidden = plan;
   if (plan) return renderPlan();
   const B = $("#moreBody");
-  if (moreTab === "info") B.innerHTML = INFO_HTML;
+  if (moreTab === "info") {
+    const off = LS.get("offMap", 0);
+    B.innerHTML = `<div class="card"><h3>📥 Oflayn xəritə</h3><p class="mute sm">Mərkəz, Schönbrunn və Prater xəritəsi telefona yüklənir — internet olmayanda da açılır.</p>
+      <button class="btn ${off ? "" : "pri"} wide" id="offBtn">${off ? "✓ Yüklənib · yenilə" : "📥 Yüklə (~5–10 MB)"}</button><div class="bar mt" id="offBar" hidden><i style="width:0"></i></div></div>
+     <div class="card mt"><h3>🎟 Biletlər (rəsmi saytlar)</h3><ul class="list">${Object.entries(TICKETS).filter(([id]) => byId[id]).map(([id, t]) => `<li><div class="grow"><b>${esc(short(byId[id].name))}</b>${byId[id].pr ? `<span class="s2">💶 ${esc(byId[id].pr)}</span>` : ""}<span class="s2">${esc(t[1])}</span></div><a class="btn s" href="${t[0]}" target="_blank" rel="noopener">Bilet ›</a></li>`).join("")}</ul></div>` + INFO_HTML;
+    $("#offBtn").onclick = async () => { const bar = $("#offBar"); bar.hidden = false; $("#offBtn").disabled = true; $("#offBtn").textContent = "Yüklənir…";
+      const ok = await offlineMap((d, t) => { bar.firstElementChild.style.width = Math.round(d / t * 100) + "%"; $("#offBtn").textContent = `Yüklənir… ${d}/${t}`; });
+      toast(ok ? "✓ Xəritə oflayn hazırdır" : "Bu brauzer dəstəkləmir"); renderMore(); };
+  }
   if (moreTab === "alb") renderAlbum(B);
   if (moreTab === "pack") renderPack(B);
   if (moreTab === "hotel") {
@@ -894,6 +999,8 @@ function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
   renderHome(); renderLoc(); startGPS(); sync();
   if (ADMIN && !ME) askWho();
+  // quietly pre-download the city map once (works offline later)
+  setTimeout(() => { const c = navigator.connection; if (!LS.get("offMap", 0) && !(c && (c.saveData || /2g/.test(c.effectiveType || "")))) offlineMap(); }, 6000);
   setInterval(() => { if (!document.hidden && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
 (function boot() {

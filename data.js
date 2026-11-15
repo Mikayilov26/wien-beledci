@@ -265,3 +265,24 @@ const INFO_HTML=`<div class="info">
 </div>`;
 
 
+
+// Official ticket sites + short tips (shown on place cards and in Məlumat → Biletlər)
+const TICKETS = {
+  schonbrunn: ["https://www.schoenbrunn.at", "Saray girişi vaxt slotu ilədir — bileti onlayn əvvəlcədən al, səhər ilk saatlar ən sakitidir."],
+  hofburg: ["https://www.sisimuseum-hofburg.at", "Bir bilet: Sisi Muzeyi + İmperator mənzilləri + Gümüş kolleksiyası. Onlayn al, kassa növbəsini keç."],
+  belvedere: ["https://www.belvedere.at", "Klimtin “Öpüş” əsəri Yuxarı Belvederedədir. Onlayn bilet vaxt slotu ilədir."],
+  khm: ["https://www.khm.at", "Böyük muzeydir — 2–3 saat ayır. Kafe zalı da görməlidir."],
+  nhm: ["https://www.nhm.at", "KHM-in qarşısındadır. Willendorf Venerası buradadır."],
+  albertina: ["https://www.albertina.at", "Terrasından Operanın gözəl mənzərəsi açılır."],
+  stephansdom: ["https://www.stephanskirche.at", "Kafedralın girişi pulsuzdur; qüllə, katakombalar və tur ayrıca biletlədir."],
+  riesenrad: ["https://www.wienerriesenrad.com", "Axşam işıqlarında daha gözəldir. Onlayn bilet növbəni qısaldır."],
+  staatsoper: ["https://www.wiener-staatsoper.at", "Tamaşa olmayan saatlarda bina turu var — saatları saytda yoxla."],
+  reitschule: ["https://www.srs.at", "Səhər məşqlərinə bilet tamaşadan ucuzdur — tarixləri saytda yoxla."],
+  hausdermusik: ["https://www.hausdermusik.com", "İnteraktiv musiqi muzeyi — otelə çox yaxındır, yağışlı hava üçün idealdır."],
+  mozarthaus: ["https://www.mozarthausvienna.at", "Motsartın yaşadığı mənzil, Stephansdomun arxasında."],
+  kunsthaus: ["https://www.kunsthauswien.com", "Hundertwasser muzeyi; Hundertwasserhaus-un özü yalnız çöldən görünür."],
+  zoo: ["https://www.zoovienna.at", "Dünyanın ən qədim zooparkı, Schönbrunn parkının içindədir."],
+  donauturm: ["https://www.donauturm.at", "Fırlanan restoran və 150 m-dən şəhər mənzərəsi."],
+  kapuziner: ["https://www.kapuzinergruft.com", "Habsburq imperatorlarının məqbərəsi, Sisi də buradadır."],
+  secession: ["https://www.secession.at", "Klimtin Bethoven frizi buradadır."],
+};
