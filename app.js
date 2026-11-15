@@ -968,9 +968,10 @@ function renderMore() {
   const B = $("#moreBody");
   if (moreTab === "info") {
     const off = LS.get("offMap", 0);
-    B.innerHTML = `<div class="card"><h3>📥 Oflayn xəritə</h3><p class="mute sm">Mərkəz, Schönbrunn və Prater xəritəsi telefona yüklənir — internet olmayanda da açılır.</p>
+    B.innerHTML = `<button class="btn pri wide" id="helpBtn2">❓ Necə istifadə edim?</button><div class="card mt"><h3>📥 Oflayn xəritə</h3><p class="mute sm">Mərkəz, Schönbrunn və Prater xəritəsi telefona yüklənir — internet olmayanda da açılır.</p>
       <button class="btn ${off ? "" : "pri"} wide" id="offBtn">${off ? "✓ Yüklənib · yenilə" : "📥 Yüklə (~5–10 MB)"}</button><div class="bar mt" id="offBar" hidden><i style="width:0"></i></div></div>
      <div class="card mt"><h3>🎟 Biletlər (rəsmi saytlar)</h3><ul class="list">${Object.entries(TICKETS).filter(([id]) => byId[id]).map(([id, t]) => `<li><div class="grow"><b>${esc(short(byId[id].name))}</b>${byId[id].pr ? `<span class="s2">💶 ${esc(byId[id].pr)}</span>` : ""}<span class="s2">${esc(t[1])}</span></div><a class="btn s" href="${t[0]}" target="_blank" rel="noopener">Bilet ›</a></li>`).join("")}</ul></div>` + INFO_HTML;
+    $("#helpBtn2").onclick = helpScreen;
     $("#offBtn").onclick = async () => { const bar = $("#offBar"); bar.hidden = false; $("#offBtn").disabled = true; $("#offBtn").textContent = "Yüklənir…";
       const ok = await offlineMap((d, t) => { bar.firstElementChild.style.width = Math.round(d / t * 100) + "%"; $("#offBtn").textContent = `Yüklənir… ${d}/${t}`; });
       toast(ok ? "✓ Xəritə oflayn hazırdır" : "Bu brauzer dəstəkləmir"); renderMore(); };
@@ -1050,7 +1051,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "13";
+const APPV = "14";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1289,6 +1290,10 @@ function photoGuide() {
     <div class="row mt"><button class="btn s pri" data-route="${p.id}">🧭 Get</button><a class="btn s" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a></div></div>`).join("")}`);
   $$("#result [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
 }
+function helpScreen() {
+  showResult(`<div class="ttl"><h2>❓ Necə istifadə edim?</h2></div>${HELP.map(([t, h], i) => `<details class="card mt help" ${i === 0 ? "open" : ""}><summary><b style="font-size:17px">${t}</b></summary><div class="sm" style="margin-top:8px">${h}</div></details>`).join("")}`);
+}
+$("#helpBtn").onclick = helpScreen;
 $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), photo: photoGuide })[b.dataset.act2]());
 
 /* ---------- boot ---------- */

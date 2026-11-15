@@ -242,6 +242,7 @@ details summary{cursor:pointer;list-style:none}
 .bkph img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}
 .bknote{background:var(--soft);border-radius:12px;padding:10px 12px;font-size:15px;white-space:pre-wrap;display:flex;justify-content:space-between;gap:8px}
 @media print{#nav,header,.noprint,[data-back],#toast{display:none!important}body,#app,main,.view{background:#fff!important;overflow:visible!important;height:auto!important;position:static!important}#homeMain{display:none!important}#result{display:block!important}.card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}
+.help ol,.help ul{padding-left:20px;margin:0}.help li{margin:6px 0}
 </style>
 </head>
 <body>
@@ -290,6 +291,7 @@ details summary{cursor:pointer;list-style:none}
           <button data-act="book"><span>📔</span>Xatirələr</button>
           <button data-act="sos" class="sos"><span>🆘</span>İtmişəm</button>
         </div>
+        <button class="lnk mt" id="helpBtn" style="display:block;margin:10px auto 0">❓ Necə istifadə edim?</button>
         <div class="row mt" id="prRow"><button class="btn s grow" id="prManual">✍️ Qiyməti yazaraq yoxla</button><button class="btn s grow" id="prHist">🧾 Baxılan qiymətlər</button></div>
         <button class="bigbtn" id="recoBtn">✨ İndi hara gedək?</button>
         <div id="recoOut"></div>
@@ -354,7 +356,7 @@ details summary{cursor:pointer;list-style:none}
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="data.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="data.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
