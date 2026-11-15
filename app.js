@@ -28,9 +28,11 @@ const DEFAULT_LIVE = { eurAzn: 1.96, eurTry: 55.2, weather: [], alerts: [] };
 const S = {
   code: null, me: null, gps: "wait", hotel: LS.get("hotel", null), album: LS.get("album", []),
   live: LS.get("live", DEFAULT_LIVE), expenses: LS.get("expCache", []), pending: LS.get("expPending", []),
-  ai: true, online: true, dest: null, filter: "all", friends: {}, share: LS.get("shareLoc", false), photos: LS.get("photosCache", []),
+  ai: LS.get("aiOn", true), online: true, dest: null, filter: "all", friends: {}, share: LS.get("shareLoc", false), photos: LS.get("photosCache", []),
 };
 let ME = LS.get("who", null);
+const TF_MIN = 75.01, TF_RATE = 0.12; // Austria: min €75.01 per receipt; ~12% net back after operator fees
+const tfBack = eur => eur >= TF_MIN ? eur * TF_RATE : 0;
 const R = () => ({ azn: +S.live.eurAzn || 1.96, try: +S.live.eurTry || 55 });
 
 /* ---------- Vienna time ---------- */
@@ -121,7 +123,11 @@ function alertBox(title, html) { $("#bigBox").innerHTML = `<h3 style="font-size:
 
 /* ---------- API ---------- */
 async function api(op, data) {
-  const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, op }, data || {})) });
+  const ctl = new AbortController(), slow = /^price\./.test(op), tm = setTimeout(() => ctl.abort(), slow ? 90000 : 20000);
+  let r;
+  try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, op }, data || {})), signal: ctl.signal }); }
+  catch (e) { throw { code: e && e.name === "AbortError" ? "timeout" : "network" }; }
+  finally { clearTimeout(tm); }
   let j = null; try { j = await r.json(); } catch (e) {}
   if (!r.ok) throw { code: (j && j.error) || "http_" + r.status };
   return j;
@@ -141,7 +147,7 @@ async function ai(o) {
 }
 function aiErr(e) {
   const c = e && e.code;
-  return ({ no_key: "Süni intellekt hələ qoşulmayıb (API açarı əlavə olunmayıb).", bad_key: "API açarı səhvdir.", no_credit: "API balansı bitib. Kənana xəbər ver.", rate_limited: "Çox sorğu getdi, bir az sonra yenidən cəhd et.", network: "İnternet yoxdur. Bağlantını yoxla.", forbidden: "Giriş kodu səhvdir." })[c] || "Xəta baş verdi, yenidən cəhd et.";
+  return ({ no_key: "Süni intellekt hələ qoşulmayıb (API açarı əlavə olunmayıb).", bad_key: "API açarı səhvdir.", no_credit: "API balansı bitib. Kənana xəbər ver.", rate_limited: "Çox sorğu getdi, bir az sonra yenidən cəhd et.", network: "İnternet yoxdur. Bağlantını yoxla.", timeout: "Cavab çox gecikdi. Bir az sonra yenidən cəhd et.", forbidden: "Giriş kodu səhvdir." })[c] || "Xəta baş verdi, yenidən cəhd et.";
 }
 const CTX = () => {
   const n = vNow(); const day = PLAN.find(d => d.d === n.date);
@@ -158,7 +164,7 @@ async function sync() {
   if (syncing || !S.code) return; syncing = true;
   try {
     const j = await api("sync");
-    S.online = true; S.ai = j.ai !== false;
+    S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai);
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
     if (j.kv && j.kv.hotel) { S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); mapHotel(); }
@@ -209,6 +215,7 @@ function renderConv() {
     : `<b>${fm(v / r.azn)} €</b><span>${fm(v / r.azn * r.try, 0)} ₺ · 1 ₼ = ${fm(1 / r.azn)} €</span>`;
 }
 $("#convIn").addEventListener("input", renderConv);
+$$("#convQuick [data-q]").forEach(b => b.onclick = () => { $("#convIn").value = b.dataset.q; renderConv(); });
 $("#convCur").onclick = () => { convCur = convCur === "EUR" ? "AZN" : "EUR"; LS.set("convCur", convCur); renderConv(); };
 
 /* ---------- home ---------- */
@@ -221,7 +228,7 @@ function renderHome() {
   todaysAlerts().filter(x => x.level !== "info").forEach(x => a += `<div class="alert"><span>⚠️</span><div><b>${esc(x.title)}</b><span class="mute">${esc(x.detail)}</span></div></div>`);
   if (now.date === "2026-11-20") {
     const left = toMin("08:45") - now.mins;
-    if (left > -150) a = `<div class="alert"><span>✈️</span><div><b>${left > 0 ? `Otelden çıxmağa ${Math.floor(left / 60)} saat ${left % 60} dəq qalıb` : "İndi hava limanına yola düş!"}</b><span class="mute">Uçuş 12:00, Terminal 1. Wien Mitte → CAT avtobusu. 10:00-da hava limanında ol.</span></div></div>` + a;
+    if (left > -150) a = `<div class="alert"><span>✈️</span><div><b>${left > 0 ? `Otelden çıxmağa ${Math.floor(left / 60)} saat ${left % 60} dəq qalıb` : "İndi hava limanına yola düş!"}</b><span class="mute">Uçuş 12:00, Terminal 1. Wien Mitte → CAT avtobusu. 10:00-da hava limanında ol.${expAll().some(e => e.tf) ? ` 🧾 ${expAll().filter(e => e.tf).length} tax-free çekin var — əvvəl gömrükdə möhürlət (+20 dəq).` : ""}</span></div></div>` + a;
   }
   $("#alertsBar").innerHTML = a;
   // next plan item
@@ -232,16 +239,24 @@ function renderHome() {
     nx = next ? `<div class="sm dim">Sıradakı · ${day.t}</div><div class="next" style="margin-top:6px"><span class="t">${next[0]}</span><div class="grow"><b>${esc(next[1])}</b><span class="s2">${esc(next[2])}</span></div>${next[3] ? `<button class="btn s pri" data-route="${next[3]}">Get</button>` : ""}</div>`
       : `<div class="sm dim">${day.t}</div><b>Bugünkü plan bitdi 🌙</b>`;
   } else {
-    nx = now.date < "2026-11-17" ? `<div class="sm dim">Səfər</div><b>17 noyabr, 11:00 — Vyanaya eniş ✈️</b><span class="s2">Dönüş: 20 noyabr, 12:00, Terminal 1</span>` : `<b>Xoş səfər idi! 💛</b>`;
+    const left = Math.max(0, Math.round((Date.parse("2026-11-17T11:00:00+01:00") - Date.now()) / 60000)), dd = Math.floor(left / 1440), hh = Math.floor(left % 1440 / 60);
+    const pk = packDone();
+    nx = now.date < "2026-11-17" ? `<div class="sm dim">Səfərə qalıb</div><div class="cd"><b>${dd}</b><span>gün</span><b>${hh}</b><span>saat</span></div><b>17 noyabr, 11:00 — Vyanaya eniş ✈️</b><span class="s2">Dönüş: 20 noyabr, 12:00, Terminal 1</span>
+      <button class="btn wide mt" id="packGo">🧳 Hazırlıq siyahısı · ${pk.n}/${pk.t} ✓</button>` : `<b>Xoş səfər idi! 💛</b>`;
   }
   $("#nextCard").innerHTML = nx;
+  if ($("#packGo")) $("#packGo").onclick = () => { moreTab = "pack"; goView("plan"); };
   $$("#nextCard [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
   // weather + rates
   const wx = S.live.weather || [];
   $("#wxCard").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
     (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`;
   renderConv(); renderInstall();
+  const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return a + (ps.includes(ME) ? (+e.eur || 0) / ps.length : 0); }, 0) : 0;
+  $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün sənin payın: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
+  $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
+const vDate = ts => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna" }).format(new Date(ts));
 function renderInstall() {
   const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
   if (standalone || LS.get("instDone", false)) { $("#installTip").innerHTML = ""; return; }
@@ -296,6 +311,8 @@ async function shrink(file, max, q) {
 function showResult(html) { goView("home"); $("#homeMain").hidden = true; const r = $("#result"); r.hidden = false; r.innerHTML = `<button class="back" data-back>‹ Geri</button>` + html; $("#v-home").scrollTop = 0; bindBack(); }
 function bindBack() { $$("[data-back]").forEach(b => b.onclick = closeResult); }
 function closeResult() { stopSpeak(); $("#result").hidden = true; $("#homeMain").hidden = false; }
+const AI_OFF_MSG = "Süni intellekt hələ qoşulmayıb — Kənan tezliklə qoşacaq. O vaxta qədər xəritə, tərcümə siyahısı, xərclər, konvertor, albom işləyir.";
+["camIn", "galIn", "menuIn"].forEach(id => $("#" + id).addEventListener("click", e => { if (S.ai === false) { e.preventDefault(); alertBox("🤖 Tezliklə", AI_OFF_MSG); } }));
 ["camIn", "galIn"].forEach(id => $("#" + id).onchange = e => identify(e.target.files[0]));
 $("#menuIn").onchange = e => menu(e.target.files[0]);
 $("#priceIn").onchange = e => priceCheck(e.target.files[0]);
@@ -439,7 +456,7 @@ function offerList(arr, flag, r) {
   return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}${o.url ? `<br><a class="sm" href="${esc(o.url)}" target="_blank" rel="noopener">bax ›</a>` : ""}</div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
 }
 function renderPrice(p, res, cached) {
-  const r = R(), v = +p.vienna_eur || null, va = v ? v * r.azn : null;
+  const r = R(), v = +p.vienna_eur || null, tf = v ? tfBack(v) : 0, va = v ? (v - tf) * r.azn : null;
   const bb = bestOf(res.baku), bt = bestOf(res.turkey);
   const ba = bb ? toAzn(bb, r) : null, ta = bt ? toAzn(bt, r) : null;
   const opts = [["vie", va], ["bak", ba], ["tr", ta]].filter(x => x[1]);
@@ -452,13 +469,14 @@ function renderPrice(p, res, cached) {
   const none = !bb && !bt;
   $("#prB").innerHTML = `${p.code ? `<div class="sm dim">Artikul: ${esc(p.code)}</div>` : ""}
    <div class="pbox">
-    <div class="${best === "vie" ? "best" : ""}"><span>🇦🇹 Vyana</span><b>${v ? fm(v) + " €" : "—"}</b><span>${va ? "≈ " + fm(va) + " ₼" : "yazılmayıb"}</span></div>
+    <div class="${best === "vie" ? "best" : ""}"><span>🇦🇹 Vyana</span><b>${v ? fm(v) + " €" : "—"}</b><span>${va ? "≈ " + fm(va) + " ₼" : "yazılmayıb"}</span>${tf ? `<span style="color:#2F6FB5">tax-free ilə</span>` : ""}</div>
     <div class="${best === "bak" ? "best" : ""}"><span>🇦🇿 Bakı</span><b>${bb ? fm(bb.price, 0) + " ₼" : "—"}</b><span>${bb ? (bb.match === "similar" ? "oxşar məhsul" : esc(bb.store)) : "tapılmadı"}</span></div>
     <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${bt ? fm(bt.price, 0) + " ₺" : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : "tapılmadı"}</span></div>
    </div>
    ${save ? `<div class="settle mt">💡 <b>${esc(save)}</b></div>` : ""}
    ${none ? `<div class="note">Bu məhsulun Bakı və Türkiyə qiyməti internetdə tapılmadı. Artikul kodunu yazıb yenidən yoxla və ya aşağıdakı linklərə bax.</div>` : ""}
    ${offerList(res.baku, "🇦🇿 Bakı mağazaları", r)}${offerList(res.turkey, "🇹🇷 Türkiyə mağazaları", r)}
+   ${tf ? `<div class="note">🧾 75 €-dan çox olduğu üçün tax-free ilə ≈ ${fm(tf)} € geri ala bilərsən — müqayisə bunu nəzərə alır. Kassada “Tax free, bitte” de, pasportu göstər.</div>` : v && v < TF_MIN ? `<div class="note">🧾 Eyni mağazada bir çekdə 75,01 €-dan çox alsan, ≈12% ƏDV geri ala bilərsən.</div>` : ""}
    ${res.note ? `<div class="note">${esc(res.note)}</div>` : ""}
    <div class="note">“eyni” — eyni artikul, “oxşar” — yaxın model. Qiymətlər ${cached ? "son 12 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
    ${priceLinks(p)}
@@ -579,6 +597,7 @@ function renderExp(force) {
       <div class="sm dim" id="expConv" style="margin-top:4px;min-height:18px"></div>
       <div class="hscroll" id="expCats">${CATS.map(c => `<button type="button" class="chip" data-cat="${c}">${c}</button>`).join("")}</div>
       <input class="inp mt" id="expD" placeholder="Qeyd (istəyə görə)">
+      <button type="button" class="chip mt" id="expTf">🧾 Tax-free forması aldım</button>
       <div class="sm dim mt">Kim ödədi?</div><div class="chips" id="expPay" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip ${expUI.payer === p ? "on" : ""}" data-p="${p}">${p}</button>`).join("")}</div>
       <div class="sm dim mt">Kimlər üçün?</div><div class="chips" id="expParts" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip on" data-p="${p}">${p}</button>`).join("")}</div>
       <button class="btn pri wide mt" type="submit">+ Əlavə et</button>
@@ -586,7 +605,9 @@ function renderExp(force) {
     <div id="expSum"></div>
     <div class="tabs mt" id="expView"><button data-v="all" class="on">Hamısı</button>${PEOPLE.map(p => `<button data-v="${p}">${p}</button>`).join("")}</div>
     <div id="expList"></div>`;
-    const upd = () => { const v = toNum($("#expA").value), r = R(); $("#expConv").textContent = v ? (expUI.cur === "EUR" ? `≈ ${fm(v * r.azn)} ₼` : `≈ ${fm(v / r.azn)} €`) : ""; };
+    const upd = () => { const v = toNum($("#expA").value), r = R(), eur = expUI.cur === "EUR" ? v : v / r.azn;
+      $("#expConv").textContent = v ? (expUI.cur === "EUR" ? `≈ ${fm(v * r.azn)} ₼` : `≈ ${fm(v / r.azn)} €`) + (eur >= TF_MIN ? ` · 🧾 75 €-dan çox: kassada “Tax free, bitte” de — ≈ ${fm(tfBack(eur))} € geri` : "") : ""; };
+    $("#expTf").onclick = () => { expUI.tf = !expUI.tf; $("#expTf").classList.toggle("on", expUI.tf); };
     $("#expA").oninput = upd;
     $$("#expCur button").forEach(b => b.onclick = () => { setExpCur(b.dataset.c); upd(); });
     $$("#expCats .chip").forEach(b => b.onclick = () => { const on = !b.classList.contains("on"); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = on ? b.dataset.cat : ""; if (on) b.classList.add("on"); });
@@ -595,8 +616,8 @@ function renderExp(force) {
     $$("#expView button").forEach(b => b.onclick = () => { expUI.view = b.dataset.v; $$("#expView button").forEach(x => x.classList.toggle("on", x === b)); renderExpData(); });
     $("#expF").onsubmit = async e => {
       e.preventDefault(); const v = toNum($("#expA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
-      const r = R(); const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: expUI.payer, parts: expUI.parts.slice(), by: ME || "", ts: Date.now() };
-      $("#expA").value = ""; $("#expD").value = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = "";
+      const r = R(); const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: expUI.payer, parts: expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf };
+      $("#expA").value = ""; $("#expD").value = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
       try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast("✓ Əlavə olundu — hamı görür"); }
       catch (err) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
       renderExpData();
@@ -610,13 +631,15 @@ function renderExpData() {
   $("#expSync").innerHTML = S.online ? `<span class="sync">☁️ Ortaq — hamı eyni siyahını görür</span>` : `<span class="sync warn">📱 Oflayn — ${S.pending.length} xərc göndərilməyi gözləyir</span>`;
   $("#expSum").innerHTML = `<div class="card mt"><div class="sm dim">Ümumi (${list.length} xərc)</div><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:32px">${fm(tot)} €</h2><span class="mute">≈ ${fm(tot * r.azn)} ₼</span></div>
    <div class="mt">${PEOPLE.map(p => { const b = s[p].paid - s[p].share; return `<div class="person"><div><b>${p}${p === ME ? " (sən)" : ""}</b><span class="s2">Payı ${fm(s[p].share)} € · Ödədi ${fm(s[p].paid)} €</span></div><div class="bal ${b > .009 ? "pos" : b < -.009 ? "neg" : ""}">${b > .009 ? "+" : ""}${fm(b)} €<span class="s2" style="font-weight:500">${b > .009 ? "alacaq" : b < -.009 ? "verəcək" : "bərabər"}</span></div></div>`; }).join("")}</div>
+   ${(() => { const t = list.filter(e => e.tf); if (!t.length) return ""; const back = t.reduce((a, e) => a + tfBack(+e.eur), 0);
+     return `<div class="alert mt" style="background:#EEF6FF"><span>🧾</span><div><b>Tax-free: ${t.length} çek · ≈ ${fm(back)} € geri</b><span class="mute">20 noyabrda hava limanında, qeydiyyatdan ƏVVƏL gömrükdə möhürlət. Mallar istifadə olunmamış, çeklər və pasport yanında olsun.</span></div></div>`; })()}
    <div class="mt"><b>🤝 Hesablaşma</b>${st.length ? st.map(x => `<div class="settle"><b>${x.from}</b> → <b>${x.to}</b>: ${fm(x.v)} € <span class="dim">(${fm(x.v * r.azn)} ₼)</span></div>`).join("") : `<div class="sm mute">Hamı bərabərdir.</div>`}</div></div>`;
   const v = expUI.view, shown = v === "all" ? list : list.filter(e => e.payer === v || (e.parts || PEOPLE).includes(v));
   const my = v !== "all" ? shown.reduce((a, e) => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return a + (ps.includes(v) ? (+e.eur || 0) / ps.length : 0); }, 0) : 0;
   const ft = fmtT;
   $("#expList").innerHTML = `${v !== "all" ? `<div class="card"><b>${v}</b>: öz payı ${fm(my)} € (≈ ${fm(my * r.azn)} ₼) · ödədiyi ${fm(s[v].paid)} €</div>` : ""}
    <div class="card mt"><ul class="list">${shown.length ? shown.map(e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE;
-     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
+     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
   $$("[data-del]").forEach(b => { let armed = false; b.onclick = async () => {
     if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
     try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
@@ -655,6 +678,7 @@ $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" 
 $$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$("#filters .chip").forEach(x => x.classList.toggle("on", x === b)); drawPOI(); });
 $("#grpBtn").classList.toggle("on", !!S.share);
 $("#grpBtn").onclick = groupSheet;
+$("#hotBtn").onclick = () => { if (!S.hotel) { toast("Otel hələ yadda saxlanmayıb (Plan → Otel)"); return; } routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
 $("#meBtn").onclick = () => { if (S.me && map) map.setView([S.me.lat, S.me.lng], 16); else $("#locChip").click(); };
 $("#sheetX").onclick = () => $("#sheet").classList.remove("on");
 function openPoi(p) {
@@ -708,11 +732,13 @@ function renderPlan() {
 }
 $$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
 function renderMore() {
+  $$("#moreTabs button").forEach(x => x.classList.toggle("on", x.dataset.t === moreTab));
   const plan = moreTab === "plan"; $("#morePlan").hidden = !plan; $("#moreBody").hidden = plan;
   if (plan) return renderPlan();
   const B = $("#moreBody");
   if (moreTab === "info") B.innerHTML = INFO_HTML;
   if (moreTab === "alb") renderAlbum(B);
+  if (moreTab === "pack") renderPack(B);
   if (moreTab === "hotel") {
     B.innerHTML = `<div class="card"><h3>🏨 Otelimiz</h3>${S.hotel ? `<p class="mute">${esc(S.hotel.name || "Otel")} — hamıda görünür.</p><button class="btn pri wide" id="hGo">🧭 Otelə qayıt</button>` : `<p class="mute">Oteldə olanda aşağıdakı düyməni bas — yer hamı üçün yadda qalacaq.</p>`}
      ${S.hotel ? `<button class="btn wide mt" id="hTaxi">🚕 Taksiyə göstər</button>` : ""}
@@ -723,6 +749,16 @@ function renderMore() {
     if ($("#hGo")) $("#hGo").onclick = () => { goView("map"); routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
     $("#hSet").onclick = async () => { const v = { lat: S.me.lat, lng: S.me.lng, name: $("#hName").value.trim() || "Otel", addr: $("#hAddr").value.trim() }; S.hotel = v; LS.set("hotel", v); mapHotel(); try { await api("kv.set", { key: "hotel", value: v }); toast("🏨 Otel yadda saxlandı (hamı üçün)"); } catch (e) { toast("Yadda saxlandı (yalnız bu telefonda)"); } renderMore(); };
   }
+}
+const PACK = [["Pasport (etibarlılıq 3+ ay)", "doc"], ["Şengen vizası / uçuş biletləri", "doc"], ["Tibbi sığorta", "doc"], ["Otel təsdiqi (telefonda)", "doc"], ["Bank kartı + bir az nağd avro", "pul"], ["Telefonda internet (roaming və ya eSIM)", "tel"], ["Powerbank + adapter lazım deyil (Avstriyada da eyni rozetka)", "tel"], ["Bu tətbiq ana ekranda + yerə icazə verilib", "tel"], ["İsti palto, şərf, əlcək (2–7°)", "geyim"], ["Rahat, su keçirməyən ayaqqabı", "geyim"], ["Kiçik çətir", "geyim"], ["Lazımi dərmanlar", "sağlıq"], ["Alış-veriş üçün boş yer çamadanda 😄", "geyim"]];
+function packState() { return LS.get("pack." + (ME || "x"), {}); }
+function packDone() { const st = packState(); return { n: PACK.filter((_, i) => st[i]).length, t: PACK.length }; }
+function renderPack(B) {
+  const st = packState(), d = packDone();
+  B.innerHTML = `<div class="card"><h3>🧳 Hazırlıq${ME ? " — " + esc(ME) : ""}</h3><div class="sm dim">${d.n}/${d.t} hazırdır${d.n === d.t ? " — əla, yola hazırsan! 🎉" : ""}</div>
+   <div class="bar mt"><i style="width:${Math.round(d.n / d.t * 100)}%"></i></div>
+   <ul class="list mt">${PACK.map((p, i) => `<li class="chk ${st[i] ? "on" : ""}" data-pk="${i}"><span class="bx">${st[i] ? "✓" : ""}</span><div class="grow">${esc(p[0])}</div></li>`).join("")}</ul></div>`;
+  $$("[data-pk]").forEach(li => li.onclick = () => { const s2 = packState(); s2[li.dataset.pk] = !s2[li.dataset.pk]; LS.set("pack." + (ME || "x"), s2); renderPack(B); });
 }
 function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" + Date.now(); S.album = [{ id, name: c.name, img: c.thumb, ts: Date.now() }].concat(S.album.filter(a => a.id !== id)).slice(0, 40); LS.set("album", S.album); sharePhoto(c.thumb, c.name, c.poi ? c.poi.id : ""); }
 async function sharePhoto(thumb, name, poi) { if (!thumb || !S.code) return; try { await api("photo.add", { thumb, name: name || "", poi: poi || "", who: ME || "", ts: Date.now() }); } catch (e) {} }

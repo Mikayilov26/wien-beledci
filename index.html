@@ -74,11 +74,11 @@ nav button.on{color:var(--red)}
 .next{display:flex;gap:12px;align-items:center}
 .next .t{font:700 15px Fraunces,serif;color:var(--red);min-width:46px}
 .next b{display:block}
-.conv{display:flex;align-items:center;gap:10px}
-.conv .in{flex:1;display:flex;align-items:center;background:var(--soft);border-radius:14px;padding:4px 4px 4px 12px;min-width:0}
+.conv{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.conv .in{flex:1 1 45%;display:flex;align-items:center;background:var(--soft);border-radius:14px;padding:4px 4px 4px 12px;min-width:0}
 .conv input{flex:1;min-width:0;border:0;background:none;font:700 24px Fraunces,serif;outline:none;padding:6px 0}
 .conv .cur{width:46px;height:42px;border-radius:11px;background:var(--card);font:700 20px Fraunces,serif;color:var(--red);box-shadow:var(--sh)}
-.conv .out{flex:1;min-width:0}
+.conv .out{flex:1 1 45%;min-width:0}
 .conv .out b{display:block;font:700 24px Fraunces,serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .conv .out span{font-size:12px;color:var(--mute)}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
@@ -216,6 +216,17 @@ nav button.on{color:var(--red)}
 .hist{display:flex;gap:10px;align-items:center;cursor:pointer}
 .hist img{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;background:var(--soft)}
 .taxi{font:700 26px/1.25 Fraunces,serif;margin:10px 0}
+.cd{display:flex;align-items:baseline;gap:6px;margin:4px 0 8px}
+.cd b{font:700 34px Fraunces,serif;color:var(--red,#C8102E)}
+.cd span{font-size:13px;color:var(--mute);margin-right:8px}
+.bar{height:8px;border-radius:99px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:#2E8B57;border-radius:99px;transition:width .3s}
+.chk{cursor:pointer;gap:12px}
+.chk .bx{width:24px;height:24px;border-radius:8px;border:2px solid #CFC7BA;display:grid;place-items:center;font-weight:800;color:#fff;flex:none}
+.chk.on .bx{background:#2E8B57;border-color:#2E8B57}
+.chk.on .grow{color:var(--mute);text-decoration:line-through}
+#convQuick{flex-basis:100%;gap:6px}
+#convQuick .chip{padding:6px 12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -243,7 +254,9 @@ nav button.on{color:var(--red)}
         <div class="card mt conv">
           <div class="in"><input id="convIn" inputmode="decimal" placeholder="0" aria-label="Məbləğ"><button class="cur" id="convCur">€</button></div>
           <div class="out" id="convOut"></div>
+          <div class="chips" id="convQuick" style="margin-top:8px"><button class="chip" data-q="5">5</button><button class="chip" data-q="10">10</button><button class="chip" data-q="20">20</button><button class="chip" data-q="50">50</button><button class="chip" data-q="100">100</button></div>
         </div>
+        <div id="todaySpend" style="margin-top:8px"></div>
         <div class="tiles">
           <label class="tile hero"><span class="e">📷</span><div><b>Yeri tanı</b><span>Şəkil çək — tarixini danışım</span></div><input type="file" accept="image/*" capture="environment" id="camIn"></label>
           <label class="tile"><span class="e">🛍</span><b>Qiymət</b><span>Bakı və Türkiyədə neçəyədir?</span><input type="file" accept="image/*" capture="environment" id="priceIn"></label>
@@ -264,7 +277,7 @@ nav button.on{color:var(--red)}
     <section class="view" id="v-map">
       <div id="map"></div>
       <div class="mapui"><div class="hscroll" id="filters"></div></div>
-      <div class="mapbtns"><button id="grpBtn" aria-label="Qrup">👭</button><button id="meBtn" aria-label="Mənim yerim">◎</button></div>
+      <div class="mapbtns"><button id="hotBtn" aria-label="Otelə">🏨</button><button id="grpBtn" aria-label="Qrup">👭</button><button id="meBtn" aria-label="Mənim yerim">◎</button></div>
       <div class="sheet" id="sheet"><button class="x" id="sheetX" aria-label="Bağla">×</button><div class="grab"></div><div id="sheetBody"></div></div>
     </section>
 
@@ -292,7 +305,7 @@ nav button.on{color:var(--red)}
 
     <!-- PLAN -->
     <section class="view" id="v-plan">
-      <div class="tabs" id="moreTabs"><button data-t="plan" class="on">🗓 Plan</button><button data-t="hotel">🏨 Otel</button><button data-t="alb">📷 Albom</button><button data-t="info">ℹ️ Məlumat</button></div>
+      <div class="tabs" id="moreTabs"><button data-t="plan" class="on">🗓 Plan</button><button data-t="hotel">🏨 Otel</button><button data-t="alb">📷 Albom</button><button data-t="pack">🧳 Hazırlıq</button><button data-t="info">ℹ️ Məlumat</button></div>
       <div id="morePlan"><div class="tabs" id="dayTabs"></div><div id="planBody"></div></div>
       <div id="moreBody" hidden></div>
     </section>

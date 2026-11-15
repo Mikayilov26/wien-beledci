@@ -72,11 +72,16 @@ Deno.serve(async (req) => {
           d: String(r.d ?? "Xərc").slice(0, 80), eur: Math.round(eur * 100) / 100,
           orig: r.orig != null ? Math.round(Number(r.orig) * 100) / 100 : null,
           cur: r.cur === "AZN" ? "AZN" : "EUR", payer: r.payer, parts,
-          by: String(r.by ?? "").slice(0, 20), ts: Number(r.ts) || Date.now(),
+          by: String(r.by ?? "").slice(0, 20), ts: Number(r.ts) || Date.now(), tf: r.tf === true,
         };
         const { data, error } = await sb.from("expenses").insert(row).select().single();
         if (error) throw error;
         return json({ row: data });
+      }
+      case "exp.tf": {
+        const { error } = await sb.from("expenses").update({ tf: b.tf === true }).eq("id", String(b.id));
+        if (error) throw error;
+        return json({ ok: true });
       }
       case "exp.del": {
         const { error } = await sb.from("expenses").delete().eq("id", String(b.id));

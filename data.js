@@ -243,6 +243,11 @@ const INFO_HTML=`<div class="info">
 <li><b>Rathausplatz:</b> hər gün 10:00–22:00</li><li><b>Schönbrunn:</b> 10:00–21:00</li>
 <li><b>Stephansplatz:</b> həftəiçi 14:00-dan</li><li><b>Am Hof</b> və <b>Freyung:</b> ~10/11:00–21:00</li>
 <li>Glühwein fincanı üçün depozit alınır. Fincanı qaytarsan, pul geri verilir.</li></ul></div>
+<div class="card"><h3>🧾 Tax-free (ƏDV-nin geri qaytarılması)</h3><ul>
+<li>Bir mağazada <b>bir çekdə 75,01 €-dan çox</b> alsan, ƏDV-nin bir hissəsini geri ala bilərsən. Komissiyadan sonra təxminən <b>12–14%</b> qayıdır.</li>
+<li>Kassada <b>“Tax free, bitte”</b> de, pasportu göstər, forma ver.</li>
+<li>20 noyabrda hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə formaya möhür vurdur. Mallar istifadə olunmamış və yanında olsun.</li>
+<li>Xərclərdə “🧾 Tax-free forması aldım” işarələ — tətbiq neçə çekin olduğunu xatırladacaq.</li></ul></div>
 <div class="card"><h3>☎️ Təcili nömrələr</h3><ul><li><a href="tel:112"><b>112</b></a> — ümumi təcili yardım</li><li><a href="tel:144"><b>144</b></a> — təcili tibbi yardım</li><li><a href="tel:133"><b>133</b></a> — polis</li><li><a href="tel:122"><b>122</b></a> — yanğın</li><li><a href="tel:141"><b>141</b></a> — gecə həkimi (Ärztefunkdienst)</li></ul></div>
 <div class="card"><h3>💡 Faydalı qeydlər</h3><ul>
 <li>Bahşiş: məbləği 5–10% yuvarlaqlaşdır. Bəzi yerlərdə bahşiş hesaba artıq əlavə olunur, ona görə hesabı yoxla.</li>
