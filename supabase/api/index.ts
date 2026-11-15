@@ -47,6 +47,10 @@ Deno.serve(async (req) => {
     if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
     return json(await pushTick());
   }
+  if (b && b.op === "brief.preview") {
+    if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
+    return json(await briefMsg(String(b.date)));
+  }
   const code = await cfg("trip_code");
   if (!b || !code || b.k !== code) return json({ error: "forbidden" }, 403);
   // personal link → identity (server decides who you are; admin can act as anyone for testing)
@@ -285,8 +289,44 @@ async function sendTo(people: string[], msg: { title: string; body: string; url?
   }
   return n;
 }
+// ☀️ daily morning briefing (one push per trip day to everyone who enabled notifications)
+const BRIEF: Record<string, { at: string; title: string; items: string[] }> = {
+  "2026-11-17": { at: "11:20", title: "Xoş gəldiniz! Gəliş və Köhnə şəhər", items: ["12:00 CAT avtobusu → Wien Mitte", "13:00 Otelə çantalar", "15:00 Stephansdom + bazar", "19:00 Rathaus Milad bazarı"] },
+  "2026-11-18": { at: "08:00", title: "İmperator günü", items: ["09:00 U4 ilə Schönbrunn", "09:30 Schönbrunn sarayı", "11:30 Bağlar və Gloriette", "12:45 Schönbrunn Milad bazarı"] },
+  "2026-11-19": { at: "08:00", title: "Klimt, Hundertvasser, Prater", items: ["09:30 Belvedere – “Öpüş”", "11:45 Hundertwasserhaus", "13:00 Nahar: Al Zaytouna (halal)", "14:30 Prater – Riesenrad"] },
+  "2026-11-20": { at: "06:45", title: "Dönüş günü — yaxşı yol!", items: ["07:30 Səhər yeməyi, check-out", "08:45 Otel → Wien Mitte", "09:10 CAT avtobusu", "10:00 Tax-free möhürü, sonra qeydiyyat"] },
+};
+const vParts = (t: number) => { const o: Record<string, string> = {}; new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(t)).forEach((p) => o[p.type] = p.value); return { date: `${o.year}-${o.month}-${o.day}`, time: `${o.hour === "24" ? "00" : o.hour}:${o.minute}` }; };
+async function briefMsg(date: string) {
+  const br = BRIEF[date]; if (!br) return null;
+  const { data: kv } = await sb.from("kv").select("value").eq("key", "live").maybeSingle();
+  const live: any = kv?.value ?? {};
+  const wx = (live.weather ?? [])[0];
+  const alerts = (live.alerts ?? []).filter((a: any) => (a.date === date || a.date === "all") && a.level !== "info");
+  const dayStart = new Date(`${date}T00:00:00+01:00`).toISOString(), dayEnd = new Date(`${date}T23:59:59+01:00`).toISOString();
+  const { data: bks } = await sb.from("bookings").select("title,at,shared").eq("shared", true).gte("at", dayStart).lte("at", dayEnd).order("at");
+  const hm = (iso: string) => vParts(new Date(iso).getTime()).time;
+  const lines = [
+    wx ? `🌦 ${wx.t}${wx.s ? ", " + wx.s : ""}` : "",
+    alerts.length ? `⚠️ ${alerts.map((a: any) => a.title).join("; ")}` : "✅ Yollarda problem yoxdur",
+    `🗓 ${br.items.slice(0, 3).join(" · ")}`,
+    (bks ?? []).length ? `🎟 ${(bks ?? []).map((x: any) => hm(x.at) + " " + x.title).join(" · ")}` : "",
+  ].filter(Boolean);
+  return { title: `☀️ ${br.title}`, body: lines.join("\n"), url: "./?brief=1" };
+}
 async function pushTick() {
   const now = Date.now();
+  // morning briefing
+  const vp = vParts(now), br = BRIEF[vp.date];
+  if (br && vp.time >= br.at && vp.time < "13:00") {
+    const flag = "brief:" + vp.date;
+    const { data: done } = await sb.from("kv").select("key").eq("key", flag).maybeSingle();
+    if (!done) {
+      await sb.from("kv").upsert({ key: flag, value: { ts: now }, updated_at: new Date().toISOString() });
+      const m = await briefMsg(vp.date);
+      if (m) await sendTo(PEOPLE, m);
+    }
+  }
   const { data } = await sb.from("bookings").select("*").eq("sent", false).lte("at", new Date(now + 1440 * 60000).toISOString()).gte("at", new Date(now - 3600000).toISOString());
   let sent = 0;
   for (const bk of data ?? []) {

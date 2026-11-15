@@ -111,6 +111,16 @@ function summaryHTML(date, title) {
    ${s.places.length ? `<div class="sm mt">📍 ${s.places.slice(0, 8).map(p => esc(short(p.name))).join(" · ")}${s.places.length > 8 ? ` +${s.places.length - 8}` : ""}</div>` : ""}
    <button class="btn s mt" data-share="${date}">📤 Paylaş</button></div>`;
 }
+function briefHTML(date) {
+  const day = PLAN.find(d => d.d === date); if (!day) return "";
+  const wx = (S.live.weather || [])[0], al = (S.live.alerts || []).filter(a => (a.date === date || a.date === "all") && a.level !== "info");
+  const bks = (typeof BOOK !== "undefined" ? BOOK : []).filter(b => vDate(b.at) === date);
+  return `<div class="card mt" style="background:linear-gradient(135deg,#FFF8E6,#FFFFFF)"><div class="sm dim">☀️ Səhər brifinqi</div><b style="font:700 20px Fraunces,serif">${esc(day.title)}</b>
+   ${wx ? `<div class="sm mt">🌦 ${esc(wx.t)}${wx.s ? ", " + esc(wx.s) : ""}${S.live.weatherNote ? " — " + esc(S.live.weatherNote) : ""}</div>` : ""}
+   <div class="sm" style="margin-top:4px">${al.length ? "⚠️ " + al.map(a => esc(a.title)).join("; ") : "✅ Yollarda problem yoxdur"}</div>
+   <div class="sm" style="margin-top:4px">🗓 ${day.items.filter(i => i[0] >= vNow().time || date !== vNow().date).slice(0, 4).map(i => `<b>${i[0]}</b> ${esc(short(i[1]))}`).join(" · ")}</div>
+   ${bks.length ? `<div class="sm" style="margin-top:4px">🎟 ${bks.map(b => `<b>${hhmm(b.at)}</b> ${esc(b.title)}`).join(" · ")}</div>` : ""}</div>`;
+}
 function shareSummary(date) {
   const s = daySummary(date);
   const txt = `Vyana, ${fmtT(Date.parse(date + "T12:00:00+01:00")).split(",")[0]} 🇦🇹\n🚶 ${s.km.toFixed(1).replace(".", ",")} km · 💶 ${fm(s.spent)} € · 📷 ${s.photos} şəkil` + (s.places.length ? `\n📍 ${s.places.map(p => short(p.name)).join(", ")}` : "");
@@ -324,7 +334,7 @@ function renderHome() {
   const wxToday = (S.live.weather || [])[0], rainy = wxToday && /yağış|qar|leysan/i.test(wxToday.s || "");
   if (rainy && tripDay) $("#alertsBar").insertAdjacentHTML("beforeend", `<div class="alert" style="background:#EEF2FF"><span>🌧</span><div><b>Bu gün ${esc(wxToday.s)} — qapalı yerlərə üstünlük ver</b><span class="mute">Ticarət mərkəzləri, muzeylər. <a href="#" id="rainShop">🛍 Alış-veriş bələdçisi ›</a></span></div></div>`);
   if ($("#rainShop")) $("#rainShop").onclick = e => { e.preventDefault(); shopGuide(); };
-  $("#daySum").innerHTML = tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : "";
+  $("#daySum").innerHTML = tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : (tripDay && now.mins < 12 * 60) || /[?&]brief=1/.test(location.search) ? briefHTML(now.date) : "";
   $$("#daySum [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share));
   $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
@@ -1040,7 +1050,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "12";
+const APPV = "13";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
