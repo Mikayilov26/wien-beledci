@@ -31,7 +31,7 @@ const S = {
   live: LS.get("live", DEFAULT_LIVE), expenses: LS.get("expCache", []), pending: LS.get("expPending", []),
   ai: LS.get("aiOn", true), online: true, dest: null, filter: "all", friends: {}, share: LS.get("shareLoc", false), photos: LS.get("photosCache", []),
 };
-let ME = LS.get("who", null);
+let ME = LS.get("who", null), ADMIN = LS.get("admin", false);
 Object.defineProperty(byId, "hotel", { get: () => { const h = S.hotel || HOTEL0; return { id: "hotel", name: "🏨 " + (h.name || "Otel"), lat: h.lat, lng: h.lng, cat: "tarix", d: h.addr || "" }; } });
 const TF_MIN = 75.01, TF_RATE = 0.12; // Austria: min €75.01 per receipt; ~12% net back after operator fees
 const tfBack = eur => eur >= TF_MIN ? eur * TF_RATE : 0;
@@ -127,7 +127,7 @@ function alertBox(title, html) { $("#bigBox").innerHTML = `<h3 style="font-size:
 async function api(op, data) {
   const ctl = new AbortController(), slow = /^price\./.test(op), tm = setTimeout(() => ctl.abort(), slow ? 90000 : 20000);
   let r;
-  try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, op }, data || {})), signal: ctl.signal }); }
+  try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, u: S.u, as: ADMIN ? ME : undefined, op }, data || {})), signal: ctl.signal }); }
   catch (e) { throw { code: e && e.name === "AbortError" ? "timeout" : "network" }; }
   finally { clearTimeout(tm); }
   let j = null; try { j = await r.json(); } catch (e) {}
@@ -136,7 +136,7 @@ async function api(op, data) {
 }
 // streaming AI text
 async function ai(o) {
-  const body = { k: S.code, op: "ai", mode: o.mode || "", who: ME || "", tier: o.tier || "fast", system: o.system, messages: o.messages || [{ role: "user", content: o.prompt }], image: o.image, max_tokens: o.max_tokens, search: !!o.search, max_searches: o.max_searches };
+  const body = { k: S.code, u: S.u, as: ADMIN ? ME : undefined, op: "ai", mode: o.mode || "", who: ME || "", tier: o.tier || "fast", system: o.system, messages: o.messages || [{ role: "user", content: o.prompt }], image: o.image, max_tokens: o.max_tokens, search: !!o.search, max_searches: o.max_searches };
   let r;
   try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
   catch (e) { throw { code: "network" }; }
@@ -166,13 +166,13 @@ async function sync() {
   if (syncing || !S.code) return; syncing = true;
   try {
     const j = await api("sync", { who: ME || "" });
-    S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai);
+    S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai); applyWho(j, false);
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
     if (j.kv && j.kv.hotel) { S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); mapHotel(); }
     S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
     await flushPending();
-  } catch (e) { S.online = false; if (e.code === "forbidden") return gate("Kod səhvdir. Linki yenidən aç."); }
+  } catch (e) { S.online = false; if (e.code === "forbidden" || e.code === "no_user") { syncing = false; return gate("Bu link işləmir. Kənanın göndərdiyi şəxsi linki yenidən aç."); } }
   finally { syncing = false; }
   renderExpData(); renderHome(); mapAlerts();
 }
@@ -185,25 +185,47 @@ async function flushPending() {
 setInterval(() => { if (!document.hidden) sync(); }, 20000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
 
-/* ---------- gate (trip code) ---------- */
+/* ---------- gate + identity (personal link: ?k=<trip>&u=<person>) ---------- */
+function parseLink(str) {
+  let k = null, u = null;
+  try { const x = new URL(str, location.href); k = x.searchParams.get("k"); u = x.searchParams.get("u"); } catch (e) {}
+  const h = String(str || ""); k = k || (h.match(/[?&#]k=([a-z0-9]+)/i) || [])[1] || null; u = u || (h.match(/[?&#]u=([a-z0-9]+)/i) || [])[1] || null;
+  return { k, u };
+}
 function readCode() {
-  const u = new URL(location.href);
-  const k = u.searchParams.get("k") || (location.hash.match(/k=([a-z0-9]+)/i) || [])[1];
-  if (k) { LS.set("code", k); return k; }
+  const { k, u } = parseLink(location.href);
+  if (k) LS.set("code", k);
+  if (u) { if (u !== LS.get("u", null)) { LS.set("who", null); ME = null; LS.set("admin", false); ADMIN = false; } LS.set("u", u); }
+  S.u = LS.get("u", null);
   return LS.get("code", null);
 }
 function gate(msg) { $("#gate").hidden = false; $("#gateMsg").textContent = msg || ""; }
 $("#gateF").onsubmit = async e => {
-  e.preventDefault(); const k = $("#gateIn").value.trim().toLowerCase(); if (!k) return;
-  S.code = k; $("#gateMsg").textContent = "Yoxlanılır…";
-  try { await api("ping"); LS.set("code", k); $("#gate").hidden = true; boot2(); } catch (err) { $("#gateMsg").textContent = err.code === "forbidden" ? "Kod səhvdir." : aiErr(err); }
+  e.preventDefault(); const v = $("#gateIn").value.trim(); if (!v) return;
+  const { k, u } = parseLink(v); if (!k || !u) { $("#gateMsg").textContent = "Linkin tamamını yapışdır (…?k=…&u=…)."; return; }
+  if (u !== LS.get("u", null)) { LS.set("who", null); ME = null; }
+  S.code = k; S.u = u; $("#gateMsg").textContent = "Yoxlanılır…";
+  try { const j = await api("ping"); LS.set("code", k); LS.set("u", u); $("#gate").hidden = true; applyWho(j, true); boot2(); }
+  catch (err) { $("#gateMsg").textContent = err.code === "forbidden" || err.code === "no_user" ? "Link səhvdir." : aiErr(err); }
 };
+function applyWho(j, fresh) {
+  if (!j) return;
+  ADMIN = !!j.admin; LS.set("admin", ADMIN);
+  if (!ADMIN && j.who && j.who !== ME) { ME = j.who; LS.set("who", ME); expUI.payer = ME; if (expBuilt) renderExp(true); renderHome(); }
+  if (ADMIN && !ME && !$("#whoModal").classList.contains("on")) askWho();
+  renderWho();
+}
+function renderWho() {
+  const b = $("#whoBtn"); if (!b) return;
+  b.hidden = !ADMIN; b.textContent = ADMIN ? `🧪 Test: ${ME || "seç"} · dəyiş` : "";
+}
 
-/* ---------- who am I ---------- */
+/* ---------- who am I (only the test link can switch) ---------- */
 function askWho() {
+  if (!ADMIN) return;
   $("#whoBtns").innerHTML = PEOPLE.map(p => `<button data-who="${p}">🙋‍♀️ ${p}</button>`).join("");
   $("#whoModal").classList.add("on");
-  $$("[data-who]").forEach(b => b.onclick = () => { ME = b.dataset.who; LS.set("who", ME); $("#whoModal").classList.remove("on"); expUI.payer = ME; renderHome(); if (expBuilt) renderExp(true); });
+  $$("[data-who]").forEach(b => b.onclick = () => { ME = b.dataset.who; LS.set("who", ME); $("#whoModal").classList.remove("on"); expUI.payer = ME; renderWho(); renderHome(); if (expBuilt) renderExp(true); sync(); });
 }
 $("#whoBtn").onclick = askWho;
 
@@ -223,7 +245,7 @@ $("#convCur").onclick = () => { convCur = convCur === "EUR" ? "AZN" : "EUR"; LS.
 /* ---------- home ---------- */
 function renderHome() {
   $("#hello").textContent = ME ? `Salam, ${ME} 👋` : "Salam 👋";
-  $("#whoBtn").textContent = ME ? "dəyiş" : "Sən kimsən?";
+  renderWho();
   const now = vNow();
   // alerts: only warnings + departure
   let a = "";
@@ -624,6 +646,12 @@ function bindDel() {
     if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
     try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
 }
+async function markPaid(x) {
+  const row = { d: `💸 ${x.from} → ${x.to} qaytardı`, eur: Math.round(x.v * 100) / 100, orig: Math.round(x.v * 100) / 100, cur: "EUR", payer: x.from, parts: [x.to], by: ME || "", ts: Date.now(), tf: false, priv: false, cat: "💸 Qaytarma" };
+  try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast("✓ Hesablaşma qeyd olundu"); }
+  catch (e) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
+  renderExpData();
+}
 function setExpCur(c) { expUI.cur = c; $$("#expCur button").forEach(x => x.classList.toggle("on", x.dataset.c === c)); }
 function renderExp(force) {
   if (!expBuilt || force) {
@@ -680,12 +708,13 @@ function renderExpData() {
   if (expUI.mode === "mine") return renderMine(all);
   $("#mineBox").innerHTML = "";
   const list = shared(all), { tot, s } = expSum(list), st = settle(s);
+  setTimeout(() => $$("[data-paid]").forEach(b => { let armed = false; b.onclick = () => { if (!armed) { armed = true; b.textContent = "Əminsən?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✓ Ödəndi"; b.classList.remove("pri"); }, 3000); return; } markPaid(st[+b.dataset.paid]); }; }), 0);
   $("#expSync").innerHTML = S.online ? `<span class="sync">☁️ Ortaq — hamı eyni siyahını görür</span>` : `<span class="sync warn">📱 Oflayn — ${S.pending.length} xərc göndərilməyi gözləyir</span>`;
   $("#expSum").innerHTML = `<div class="card mt"><div class="sm dim">Ümumi (${list.length} xərc)</div><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:32px">${fm(tot)} €</h2><span class="mute">≈ ${fm(tot * r.azn)} ₼</span></div>
    <div class="mt">${PEOPLE.map(p => { const b = s[p].paid - s[p].share; return `<div class="person"><div><b>${p}${p === ME ? " (sən)" : ""}</b><span class="s2">Payı ${fm(s[p].share)} € · Ödədi ${fm(s[p].paid)} €</span></div><div class="bal ${b > .009 ? "pos" : b < -.009 ? "neg" : ""}">${b > .009 ? "+" : ""}${fm(b)} €<span class="s2" style="font-weight:500">${b > .009 ? "alacaq" : b < -.009 ? "verəcək" : "bərabər"}</span></div></div>`; }).join("")}</div>
    ${(() => { const t = list.filter(e => e.tf); if (!t.length) return ""; const back = t.reduce((a, e) => a + tfBack(+e.eur), 0);
      return `<div class="alert mt" style="background:#EEF6FF"><span>🧾</span><div><b>Tax-free: ${t.length} çek · ≈ ${fm(back)} € geri</b><span class="mute">20 noyabrda hava limanında, qeydiyyatdan ƏVVƏL gömrükdə möhürlət. Mallar istifadə olunmamış, çeklər və pasport yanında olsun.</span></div></div>`; })()}
-   <div class="mt"><b>🤝 Hesablaşma</b>${st.length ? st.map(x => `<div class="settle"><b>${x.from}</b> → <b>${x.to}</b>: ${fm(x.v)} € <span class="dim">(${fm(x.v * r.azn)} ₼)</span></div>`).join("") : `<div class="sm mute">Hamı bərabərdir.</div>`}</div></div>`;
+   <div class="mt"><b>🤝 Hesablaşma</b>${st.length ? st.map((x, i) => `<div class="settle" style="display:flex;align-items:center;gap:8px"><div class="grow"><b>${x.from}</b> → <b>${x.to}</b>: ${fm(x.v)} € <span class="dim">(${fm(x.v * r.azn)} ₼)</span></div>${x.from === ME || x.to === ME ? `<button class="btn s" data-paid="${i}">✓ Ödəndi</button>` : ""}</div>`).join("") : `<div class="sm mute">Hamı bərabərdir. 🎉</div>`}</div></div>`;
   const v = expUI.view, shown = v === "all" ? list : list.filter(e => e.payer === v || (e.parts || PEOPLE).includes(v));
   const my = v !== "all" ? shown.reduce((a, e) => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return a + (ps.includes(v) ? (+e.eur || 0) / ps.length : 0); }, 0) : 0;
   const ft = fmtT;
@@ -864,12 +893,12 @@ window.goView = goView; window.routeTo = routeTo;
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
   renderHome(); renderLoc(); startGPS(); sync();
-  if (!ME) askWho();
+  if (ADMIN && !ME) askWho();
   setInterval(() => { if (!document.hidden && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
 (function boot() {
   S.code = readCode();
-  if (!S.code) { gate(); return; }
+  if (!S.code || !S.u) { gate(S.code ? "Kənanın göndərdiyi şəxsi linki aç (sonunda &u=… olan)." : ""); return; }
   boot2();
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

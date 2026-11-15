@@ -43,16 +43,24 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const code = await cfg("trip_code");
   if (!b || !code || b.k !== code) return json({ error: "forbidden" }, 403);
+  // personal link → identity (server decides who you are; admin can act as anyone for testing)
+  let users: Record<string, string> = {};
+  try { users = JSON.parse(await cfg("users", "{}")); } catch { /* */ }
+  const uname = users[String(b.u ?? "")];
+  if (!uname) return json({ error: "no_user" }, 403);
+  const admin = uname === "admin";
+  const who = admin ? (PEOPLE.includes(b.as) ? b.as : "") : uname;
+  b.who = who;
   const k = keys();
   const aiStatus = { claude: !!k.claude, gemini: !!k.gemini };
 
   try {
     switch (b.op) {
-      case "ping": return json({ ok: true, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus });
+      case "ping": return json({ ok: true, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, who, admin });
 
       case "sync": {
         const [ex, kv, pl] = await Promise.all([
-          sb.from("expenses").select("*").or(`priv.eq.false,by.eq.${PEOPLE.includes(b.who) ? b.who : "-"}`).order("ts", { ascending: false }).limit(1500),
+          sb.from("expenses").select("*").or(`priv.eq.false,by.eq.${who || "-"}`).order("ts", { ascending: false }).limit(1500),
           sb.from("kv").select("key,value,updated_at"),
           sb.from("price_log").select("id", { count: "exact", head: true }),
         ]);
@@ -60,7 +68,7 @@ Deno.serve(async (req) => {
         if (kv.error) throw kv.error;
         const kvm: Record<string, unknown> = {};
         for (const r of kv.data ?? []) kvm[r.key] = r.value;
-        return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0 });
+        return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
       }
 
       case "exp.add": {
@@ -68,12 +76,13 @@ Deno.serve(async (req) => {
         const eur = Number(r.eur);
         const parts = Array.isArray(r.parts) ? r.parts.filter((p: string) => PEOPLE.includes(p)) : [];
         if (!(eur > 0 && eur < 100000) || !PEOPLE.includes(r.payer) || !parts.length) return json({ error: "invalid" }, 400);
-        if (r.priv === true && !(PEOPLE.includes(r.by) && r.payer === r.by)) return json({ error: "invalid" }, 400);
+        if (!who) return json({ error: "no_user" }, 403);
+        if (r.priv === true && r.payer !== who) return json({ error: "invalid" }, 400);
         const row = {
           d: String(r.d ?? "Xərc").slice(0, 80), eur: Math.round(eur * 100) / 100,
           orig: r.orig != null ? Math.round(Number(r.orig) * 100) / 100 : null,
           cur: r.cur === "AZN" ? "AZN" : "EUR", payer: r.payer, parts,
-          by: String(r.by ?? "").slice(0, 20), ts: Number(r.ts) || Date.now(), tf: r.tf === true,
+          by: who, ts: Number(r.ts) || Date.now(), tf: r.tf === true,
           priv: r.priv === true, cat: r.cat ? String(r.cat).slice(0, 30) : null,
         };
         const { data, error } = await sb.from("expenses").insert(row).select().single();
@@ -86,6 +95,8 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
       case "exp.del": {
+        const { data: row } = await sb.from("expenses").select("priv,by").eq("id", String(b.id)).maybeSingle();
+        if (row && row.priv && row.by !== who) return json({ error: "forbidden" }, 403);
         const { error } = await sb.from("expenses").delete().eq("id", String(b.id));
         if (error) throw error;
         return json({ ok: true });
@@ -96,6 +107,7 @@ Deno.serve(async (req) => {
         if (key === "hotel") {
           if (!(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
         } else if (LOC_KEY.test(key)) {
+          if (key !== "loc:" + who) return json({ error: "forbidden" }, 403);
           if (v !== null && !(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
         } else return json({ error: "readonly" }, 400);
         if (v === null) { await sb.from("kv").delete().eq("key", key); return json({ ok: true }); }
@@ -109,7 +121,7 @@ Deno.serve(async (req) => {
       case "photo.add": {
         const t = String(b.thumb || "");
         if (!t.startsWith("data:image/jpeg;base64,") || t.length > 115000) return json({ error: "invalid" }, 400);
-        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who: String(b.who ?? "").slice(0, 20), name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t });
+        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who, name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t });
         if (error) throw error;
         return json({ ok: true });
       }
