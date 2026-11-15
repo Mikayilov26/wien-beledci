@@ -443,10 +443,14 @@ function geminiContents(msgs: any[], image: string | null) {
 async function geminiStream(model: string, msgs: any[], image: string | null, system: string | undefined, maxTok: number) {
   const body: any = { contents: geminiContents(msgs, image), generationConfig: { maxOutputTokens: maxTok + 1500, thinkingConfig: { thinkingLevel: "low" } } };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
-    method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  if (!r.ok || !r.body) return upstreamError(r);
+  let r: Response | null = null;
+  for (const m of gemChain(model)) {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse`, {
+      method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (r.ok || ![429, 500, 503].includes(r.status)) break;
+  }
+  if (!r || !r.ok || !r.body) return upstreamError(r!);
   return textStream((push) => sseLines(r.body!, (ev) => {
     for (const p of ev.candidates?.[0]?.content?.parts ?? []) if (p.text && !p.thought) push(p.text);
   }));
@@ -474,16 +478,22 @@ async function claudeOnce(model: string, content: any, maxTok: number, tools?: a
 async function geminiOnce(model: string, parts: any[], maxTok: number, search: boolean, thinking = "low") {
   const body: any = { contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: maxTok + 2500, thinkingConfig: { thinkingLevel: thinking } } };
   if (search) body.tools = [{ google_search: {} }];
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  if (!r.ok) throw await upstreamErr(r);
+  let r: Response | null = null;
+  for (const m of gemChain(model)) {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+      method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (r.ok || ![429, 500, 503].includes(r.status)) break;
+  }
+  if (!r || !r.ok) throw await upstreamErr(r!);
   const j = await r.json();
   const cand = j.candidates?.[0] ?? {};
   const text = (cand.content?.parts ?? []).filter((p: any) => p.text && !p.thought).map((p: any) => p.text).join("");
   const sources = (cand.groundingMetadata?.groundingChunks ?? []).filter((c: any) => c.web?.uri).map((c: any) => ({ url: c.web.uri, title: c.web.title ?? "" }));
   return { text, sources, queries: cand.groundingMetadata?.webSearchQueries ?? [] };
 }
+// if one Gemini model is overloaded (503) or rate-limited, try the other one
+const gemChain = (m: string) => m === "gemini-3.1-flash-lite" ? [m, "gemini-3.8-flash"] : [m, "gemini-3.1-flash-lite"];
 const parseJSON = (t: string) => { try { return JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)); } catch { return null; } };
 
 /* ------------------------------------------------------------------ price: step 1, read the product/label */
@@ -559,7 +569,7 @@ Sonda YALNIZ bu JSON-u yaz:
     await sb.from("price_cache").upsert({ key, result, provider: prov, created_at: new Date().toISOString() });
     await logPrice(b, p, result);
     return json({ result, cached: false, provider: prov });
-  } catch (e: any) { return json({ error: e.code ?? "upstream" }, e.status ?? 502); }
+  } catch (e: any) { return json({ error: e.code ?? "upstream", detail: e.detail ? String(e.detail).slice(0, 300) : undefined }, e.status ?? 502); }
 }
 // Prefer a real source link from search results whose domain matches the offer.
 function resolveUrl(offer: { url: string; store: string }, sources: { url: string; title: string }[]) {
