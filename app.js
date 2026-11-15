@@ -321,6 +321,9 @@ function renderHome() {
   renderConv(); renderInstall();
   const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
   const tripDay = now.date >= "2026-11-17" && now.date <= "2026-11-20";
+  const wxToday = (S.live.weather || [])[0], rainy = wxToday && /yağış|qar|leysan/i.test(wxToday.s || "");
+  if (rainy && tripDay) $("#alertsBar").insertAdjacentHTML("beforeend", `<div class="alert" style="background:#EEF2FF"><span>🌧</span><div><b>Bu gün ${esc(wxToday.s)} — qapalı yerlərə üstünlük ver</b><span class="mute">Ticarət mərkəzləri, muzeylər. <a href="#" id="rainShop">🛍 Alış-veriş bələdçisi ›</a></span></div></div>`);
+  if ($("#rainShop")) $("#rainShop").onclick = e => { e.preventDefault(); shopGuide(); };
   $("#daySum").innerHTML = tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : "";
   $$("#daySum [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share));
   $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
@@ -837,7 +840,7 @@ function renderExpData() {
 
 /* ---------- map (Leaflet) ---------- */
 let map = null, poiLayer = null, meLayer = null, routeLayer = null, alertLayer = null, hotelLayer = null, frLayer = null;
-const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn"]);
+const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
 function initMap() {
   if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
@@ -883,7 +886,7 @@ async function offlineMap(onProg) {
   } finally { offBusy = false; }
 }
 function mapFriends() { if (!map || !frLayer) return; frLayer.clearLayers(); friendsList().forEach(f => L.marker([f.lat, f.lng], { icon: L.divIcon({ className: "", html: `<div class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</div>`, iconSize: null, iconAnchor: [12, 12] }) }).on("click", () => groupSheet()).addTo(frLayer)); }
-const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["metro", "Ⓜ Metro"]];
+const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["shop", "🛍 Mağaza"], ["metro", "Ⓜ Metro"]];
 $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("");
 $$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$("#filters .chip").forEach(x => x.classList.toggle("on", x === b)); drawPOI(); });
 $("#grpBtn").classList.toggle("on", !!S.share);
@@ -898,7 +901,7 @@ function openPoi(p) {
    <p class="mute" style="margin:8px 0">${esc(p.d)}</p>${price(p) ? `<div class="sm">💶 ${esc(price(p))}</div>` : ""}
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
    ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}
-   <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
+   <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
   $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
 function segOff(a, b, pt) { const kx = 111320 * Math.cos(48.2 * Math.PI / 180), ky = 111320; const ax = a.lng * kx, ay = a.lat * ky, bx = b.lng * kx, by = b.lat * ky, px = pt.lng * kx, py = pt.lat * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
@@ -1006,7 +1009,7 @@ function taxiCard() {
 }
 async function renderAlbum(B) {
   const draw = () => {
-    const shared = S.photos.map(p => ({ id: "s" + p.id, name: p.name || "Şəkil", img: p.thumb, ts: p.ts, who: p.who, poi: p.poi }));
+    const shared = S.photos.filter(p => !p.priv).map(p => ({ id: "s" + p.id, name: p.name || "Şəkil", img: p.thumb, ts: p.ts, who: p.who, poi: p.poi }));
     const keys = new Set(shared.map(x => x.img));
     const all = shared.concat(S.album.filter(a => !keys.has(a.img))).sort((a, b) => b.ts - a.ts);
     B.innerHTML = `<label class="btn pri wide" style="position:relative;overflow:hidden">📷 Şəkil əlavə et (hamı görəcək)<input type="file" accept="image/*" multiple id="albIn" style="position:absolute;inset:0;opacity:0"></label>
@@ -1033,10 +1036,157 @@ function goView(v) {
 $$("#nav button").forEach(b => b.onclick = () => { if (b.dataset.v === "home" && !$("#result").hidden) closeResult(); goView(b.dataset.v); });
 window.goView = goView; window.routeTo = routeTo;
 
+
+/* ================= v11: quick actions & guides ================= */
+const APPV = "11";
+// auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
+async function checkVersion() {
+  try {
+    const v = (await (await fetch("version.txt?t=" + Date.now(), { cache: "no-store" })).text()).trim();
+    if (v && v !== APPV && LS.get("reloadedFor", "") !== v) { LS.set("reloadedFor", v); toast("🔄 Yeni versiya — yenilənir…"); setTimeout(() => location.reload(), 700); }
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
+
+function modal(html) { $("#bigBox").innerHTML = html + `<button class="btn wide mt" id="mdX">Bağla</button>`; $("#bigModal").classList.add("on"); $("#mdX").onclick = () => $("#bigModal").classList.remove("on"); }
+const closeModal = () => $("#bigModal").classList.remove("on");
+
+// ---------- 🚕 quick taxi ----------
+function quickTaxi() {
+  const h = S.hotel || HOTEL0, hotelDest = { id: "hotel", name: h.name, lat: h.lat, lng: h.lng, addr: h.addr };
+  const now = vNow(), day = PLAN.find(d => d.d === now.date), nx = day && day.items.find(i => i[0] >= now.time && i[3] && i[3] !== "hotel");
+  const nxp = nx ? byId[nx[3]] : null, from = S.me || planGuess();
+  const row = (d, label) => { const m = from ? walkM(dist(from, d)) : 2000, [lo, hi] = taxiEst(m);
+    return `<div class="taxi-box mt" style="text-align:left"><b>${label}</b><div class="sm dim">~${taxiMin(m)} dəq · ≈ ${lo}–${hi} €</div>
+     <div class="row mt"><a class="btn pri grow" href="${uberLink(d)}" target="_blank" rel="noopener">Uber</a><a class="btn grow" href="tel:+43140100">📞 40100</a><button class="btn" data-dc="${d.id}">🪧</button></div></div>`; };
+  modal(`<h3 style="font-size:20px">🚕 Taksi</h3>${row(hotelDest, "🏨 Otelə")}${nxp ? row(nxp, "🗓 Sıradakı: " + short(nxp.name)) : ""}
+    <button class="btn wide mt" id="qtMap">🗺 Başqa yer — xəritədən seç</button>
+    <div class="sm dim mt" style="text-align:left">Uber qiyməti əvvəlcədən göstərir. 🪧 — sürücüyə göstərmək üçün iri ünvan.</div>`);
+  $$("[data-dc]").forEach(b => b.onclick = () => b.dataset.dc === "hotel" ? taxiCard() : destCard(byId[b.dataset.dc]));
+  $("#qtMap").onclick = () => { closeModal(); goView("map"); toast("Yerə toxun → “🧭 Get” → Taksi"); };
+}
+
+// ---------- 🆘 lost ----------
+function sos() {
+  const me = S.me, link = me ? `https://maps.google.com/?q=${me.lat.toFixed(5)},${me.lng.toFixed(5)}` : "";
+  modal(`<h3 style="font-size:20px">🆘 Narahat olma</h3>
+   <button class="btn pri wide mt" id="sosShare">📍 Yerimi qızlara göndər</button>
+   <button class="btn wide mt" id="sosHotel">🏨 Otelə taksi</button>
+   <button class="btn wide mt" id="sosAsk">🗣 Almanca kömək istə</button>
+   <a class="btn wide mt" href="tel:112">📞 112 — təcili yardım</a>
+   ${me ? "" : `<div class="note">GPS yeri hələ tapılmayıb — açıq yerə çıx və ya icazəni yoxla.</div>`}`);
+  $("#sosShare").onclick = async () => {
+    if (ME) { S.share = true; LS.set("shareLoc", true); try { $("#grpBtn").classList.add("on"); } catch (e) {} await pushLoc(true); }
+    const txt = `🆘 ${ME || "Mən"}: buradayam${me ? " → " + link : ""}${S.me ? ` (${S.me.label} yaxınlığı)` : ""}`;
+    if (navigator.share) navigator.share({ text: txt }).catch(() => {}); else { try { await navigator.clipboard.writeText(txt); toast("Kopyalandı — WhatsApp-a yapışdır"); } catch (e) {} }
+  };
+  $("#sosHotel").onclick = () => { closeModal(); quickTaxi(); };
+  $("#sosAsk").onclick = () => showBig("Entschuldigung, ich habe mich verlaufen. Können Sie mir bitte helfen?", "Bağışlayın, azmışam. Mənə kömək edə bilərsiniz?");
+}
+
+// ---------- 🎄 Christmas markets ----------
+function xmasGuide() {
+  const from = S.me || planGuess() || byId.stephansdom;
+  const list = MARKETS.filter(m => byId[m.id]).map(m => ({ m, p: byId[m.id], d: dist(from, byId[m.id]) })).sort((a, b) => a.d - b.d);
+  showResult(`<div class="ttl"><h2>🎄 Milad bazarları</h2></div>
+   <div class="card">${MARKET_TIPS.map(t => `<div class="sm" style="margin:6px 0">${t}</div>`).join("")}</div>
+   ${list.map(({ m, p, d }) => { const o = openState(p); return `<div class="card mt"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">${esc(short(p.name))}</b><span class="km">${fmtKm(walkM(d))}</span></div>
+     <div>${o ? `<span class="pill ${o.open ? "open" : "closed"}">${o.txt}</span>` : ""} <span class="pill">${esc(m.when)}</span></div>
+     <div class="sm mute" style="margin-top:6px">${esc(m.why)}</div><div class="sm" style="margin-top:4px">🕘 ${esc(m.hrs)}</div><div class="sm" style="margin-top:4px">😋 ${esc(m.eat)}</div>
+     <div class="row mt"><button class="btn s pri" data-route="${p.id}">🧭 Get</button><a class="btn s" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a></div></div>`; }).join("")}`);
+  $$("#result [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
+}
+
+// ---------- 🛍 shopping (malls & good brands first) ----------
+function shopGuide() {
+  const from = S.me || planGuess() || (S.hotel || HOTEL0);
+  const ids = ["shop-kaerntner", "shop-goldenes", "shop-wienmitte", "shop-mahue", "shop-donauzentrum"];
+  showResult(`<div class="ttl"><h2>🛍 Alış-veriş</h2></div>
+   <div class="card">${SHOP_TIPS.map(t => `<div class="sm" style="margin:6px 0">${t}</div>`).join("")}</div>
+   <div class="card mt" style="border:2px solid #8a5cf6"><div style="display:flex;justify-content:space-between"><b style="font-size:18px">⭐ Designer Outlet Parndorf</b><span class="pill">30–70% endirim</span></div>
+    <div class="sm mute" style="margin-top:6px">${esc(byId["shop-parndorf"].d)}</div>
+    <div class="sm" style="margin-top:6px">🕘 ${esc(PARNDORF.hrs)}</div><div class="sm" style="margin-top:4px">🚌 ${esc(PARNDORF.shuttle)}</div><div class="sm" style="margin-top:4px">💡 ${esc(PARNDORF.tip)}</div>
+    <div class="row mt"><a class="btn s pri" href="${PARNDORF.url}" target="_blank" rel="noopener">Shuttle bileti / saatlar</a></div></div>
+   ${ids.map(id => { const p = byId[id], d = dist(from, p); return `<div class="card mt"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">${esc(p.name)}</b><span class="km">${fmtKm(walkM(d))}</span></div>
+     <div class="sm mute" style="margin-top:6px">${esc(p.d)}</div>
+     <div class="row mt"><button class="btn s pri" data-route="${id}">🧭 Get</button><a class="btn s" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a><a class="btn s" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + " Wien")}" target="_blank" rel="noopener">Google</a></div></div>`; }).join("")}`);
+  $$("#result [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
+}
+
+// ---------- 🎁 private gift planner ----------
+let GIFTS = LS.get("gifts." + (ME || "x"), []);
+async function giftsLoad() { try { GIFTS = (await api("gifts")).gifts || []; LS.set("gifts." + ME, GIFTS); } catch (e) {} }
+async function giftScreen(skipLoad) {
+  if (!ME) { toast("Əvvəl şəxsi linkini aç"); return; }
+  if (!skipLoad) { showResult(`<div class="card"><span class="spin"></span></div>`); await giftsLoad(); }
+  const groups = {}; GIFTS.forEach(g => (groups[g.recipient] = groups[g.recipient] || []).push(g));
+  const done = GIFTS.filter(g => g.bought).length, spent = GIFTS.reduce((a, g) => a + (g.bought ? +g.eur || 0 : 0), 0), plan = GIFTS.reduce((a, g) => a + (+g.budget || 0), 0);
+  const names = Object.keys(groups);
+  showResult(`<div class="ttl"><h2>🎁 Hədiyyələrim</h2></div><div class="sm dim" style="margin:-6px 0 8px">🔒 Yalnız sən görürsən</div>
+   ${GIFTS.length ? `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><b>${done}/${GIFTS.length} alınıb</b><span class="mute">${fm(spent)} €${plan ? ` / plan ${fm(plan, 0)} €` : ""}</span></div><div class="bar mt"><i style="width:${Math.round(done / GIFTS.length * 100)}%"></i></div></div>` : ""}
+   <form class="card mt" id="gfF" autocomplete="off"><b>+ Yeni hədiyyə</b>
+    <input class="inp mt" id="gfTo" placeholder="Kimə? (məs. Anam)" list="gfNames"><datalist id="gfNames">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+    <input class="inp mt" id="gfIt" placeholder="Nə? (məs. Swarovski boyunbağı)">
+    <input class="inp mt" id="gfBu" inputmode="decimal" placeholder="Büdcə € (istəyə bağlı)">
+    <button class="btn pri wide mt">Əlavə et</button></form>
+   ${names.map(n => `<div class="card mt"><b style="font-size:17px">👤 ${esc(n)}</b><ul class="list">${groups[n].map(g => `<li class="chk ${g.bought ? "on" : ""}"><span class="bx" data-gb="${g.id}">${g.bought ? "✓" : ""}</span><div class="grow" data-gb="${g.id}" style="cursor:pointer">${esc(g.item)}<span class="s2" style="text-decoration:none">${g.bought ? `alındı${g.eur ? " · " + fm(+g.eur) + " €" : ""}${g.store ? " · " + esc(g.store) : ""}` : g.budget ? "büdcə " + fm(+g.budget, 0) + " €" : ""}</span></div><button class="btn s" data-gd="${g.id}">✕</button></li>`).join("")}</ul></div>`).join("")}
+   ${GIFTS.length ? "" : `<div class="card mt mute" style="text-align:center">Səfərdən əvvəl kimlərə nə almaq istədiyini yaz. Vyanada alanda ✓ bas.</div>`}`);
+  $("#gfF").onsubmit = async e => { e.preventDefault(); const to = $("#gfTo").value.trim(), it = $("#gfIt").value.trim(); if (!to || !it) { toast("Kimə və nə — ikisini də yaz"); return; }
+    try { const j = await api("gift.add", { recipient: to, item: it, budget: toNum($("#gfBu").value) || null }); GIFTS.push(j.gift); LS.set("gifts." + ME, GIFTS); giftScreen(true); } catch (err) { toast("Alınmadı: " + aiErr(err)); } };
+  $$("[data-gb]").forEach(el => el.onclick = () => { const g = GIFTS.find(x => x.id === el.dataset.gb); if (!g) return; g.bought ? giftToggle(g, false) : giftBuy(g); });
+  $$("[data-gd]").forEach(b => { let armed = false; b.onclick = async () => { if (!armed) { armed = true; b.textContent = "Sil?"; setTimeout(() => { armed = false; b.textContent = "✕"; }, 2500); return; }
+    try { await api("gift.del", { id: b.dataset.gd }); GIFTS = GIFTS.filter(x => x.id !== b.dataset.gd); LS.set("gifts." + ME, GIFTS); giftScreen(true); } catch (err) { toast(aiErr(err)); } }; });
+}
+function giftBuy(g) {
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px">✓ Aldım: ${esc(g.item)}</h3><div class="sm dim">👤 ${esc(g.recipient)}</div>
+   <input class="inp mt" id="gbE" inputmode="decimal" placeholder="Neçəyə aldın? €" value="${g.budget ? String(g.budget).replace(".", ",") : ""}">
+   <input class="inp mt" id="gbS" placeholder="Harada? (istəyə bağlı)">
+   <button type="button" class="chip on mt" id="gbX">💶 Şəxsi xərclərimə də yaz</button>
+   <div class="row mt"><button class="btn grow" id="gbC">Ləğv et</button><button class="btn pri grow" id="gbOk">✓ Aldım</button></div>`;
+  $("#bigModal").classList.add("on"); let toExp = true;
+  $("#gbX").onclick = () => { toExp = !toExp; $("#gbX").classList.toggle("on", toExp); };
+  $("#gbC").onclick = closeModal;
+  $("#gbOk").onclick = async () => {
+    const eur = toNum($("#gbE").value), store = $("#gbS").value.trim();
+    try { const j = await api("gift.upd", { id: g.id, bought: true, eur: eur || null, store }); Object.assign(g, j.gift); LS.set("gifts." + ME, GIFTS);
+      if (toExp && eur > 0) { const row = { d: `🎁 ${g.item} → ${g.recipient}`.slice(0, 80), eur, orig: eur, cur: "EUR", payer: ME, parts: [ME], by: ME, ts: Date.now(), tf: eur >= TF_MIN, priv: true, cat: "🎁 Hədiyyə" };
+        try { const k = await api("exp.add", { row }); S.expenses.unshift(k.row); LS.set("expCache", S.expenses); } catch (e2) { S.pending.push(row); LS.set("expPending", S.pending); } }
+      closeModal(); toast("🎁 Qeyd olundu"); giftScreen(true);
+    } catch (err) { toast("Alınmadı: " + aiErr(err)); }
+  };
+}
+async function giftToggle(g, v) { try { const j = await api("gift.upd", { id: g.id, bought: v }); Object.assign(g, j.gift); LS.set("gifts." + ME, GIFTS); giftScreen(true); } catch (err) { toast(aiErr(err)); } }
+
+// ---------- 📔 private memory book ----------
+async function bookScreen() {
+  if (!ME) { toast("Əvvəl şəxsi linkini aç"); return; }
+  showResult(`<div class="card"><span class="spin"></span></div>`);
+  let notes = [], photos = [];
+  try { [notes, photos] = await Promise.all([api("notes").then(j => j.notes || []), api("photos").then(j => (j.photos || []).filter(p => p.who === ME))]); } catch (e) {}
+  const days = PLAN.map(d => d.d), today = vNow().date, tot = days.reduce((a, d) => { const s = daySummary(d); return { km: a.km + s.km, sp: a.sp + s.spent }; }, { km: 0, sp: 0 });
+  showResult(`<div class="ttl noprint"><h2>📔 Xatirələrim</h2><button class="btn s" id="bkPrint">🖨 PDF</button></div><div class="sm dim noprint" style="margin:-6px 0 8px">🔒 Yalnız sən görürsən</div>
+   <div class="book"><div class="card"><h2 style="font-size:24px">Vyana · 17–20 noyabr 2026</h2><div class="mute">${esc(ME)}</div>
+    <div class="stat"><div><b>${tot.km.toFixed(1).replace(".", ",")} km</b><span>🚶 piyada</span></div><div><b>${photos.length}</b><span>📷 şəkil</span></div><div><b>${fm(tot.sp, 0)} €</b><span>💶 xərc</span></div></div></div>
+   ${days.map((d, i) => { const s = daySummary(d), dn = notes.filter(n => n.day === d), dp = photos.filter(p => vDate(p.ts) === d), dd = PLAN[i];
+     return `<div class="card mt"><b style="font-size:18px">${esc(dd.t)} — ${esc(dd.title)}</b>
+      ${s.places.length ? `<div class="sm mt">📍 ${s.places.map(p => esc(short(p.name))).join(" · ")}</div>` : ""}
+      ${s.km || s.spent ? `<div class="sm dim">🚶 ${s.km.toFixed(1).replace(".", ",")} km · 💶 ${fm(s.spent)} €</div>` : ""}
+      ${dp.length ? `<div class="bkph mt">${dp.map(p => `<img src="${p.thumb}" alt="">`).join("")}</div>` : ""}
+      ${dn.map(n => `<div class="bknote mt">${esc(n.txt)}<button class="lnk sm noprint" data-nd="${n.id}">sil</button></div>`).join("")}
+      ${d <= today ? `<div class="row mt noprint"><button class="btn s" data-na="${d}">✍️ Qeyd yaz</button><label class="btn s" style="position:relative;overflow:hidden">📷 Şəxsi şəkil<input type="file" accept="image/*" data-np="${d}" style="position:absolute;inset:0;opacity:0"></label></div>` : `<div class="sm dim mt noprint">Bu gün gələndə doldurulacaq.</div>`}</div>`; }).join("")}</div>`);
+  $("#bkPrint").onclick = () => window.print();
+  $$("[data-na]").forEach(b => b.onclick = async () => { const t = prompt("Bu gün nə yadda qaldı?"); if (!t || !t.trim()) return; try { await api("note.add", { day: b.dataset.na, txt: t.trim() }); bookScreen(); } catch (e) { toast(aiErr(e)); } });
+  $$("[data-nd]").forEach(b => b.onclick = async () => { try { await api("note.del", { id: b.dataset.nd }); bookScreen(); } catch (e) { toast(aiErr(e)); } });
+  $$("[data-np]").forEach(inp => inp.onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const t = (await shrink(f, 480, .72)).url; await api("photo.add", { thumb: t, name: "", poi: "", ts: Date.parse(inp.dataset.np + "T12:00:00+01:00") === Date.parse(today + "T12:00:00+01:00") ? Date.now() : Date.parse(inp.dataset.np + "T12:00:00+01:00"), priv: true }); toast("📷 Əlavə olundu"); bookScreen(); } catch (er) { toast(aiErr(er)); } });
+}
+
+// ---------- wire up home mini tiles ----------
+$$("[data-act]").forEach(b => b.onclick = () => ({ taxi: quickTaxi, sos, xmas: xmasGuide, shop: shopGuide, gifts: () => giftScreen(), book: bookScreen })[b.dataset.act]());
+
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync();
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion();
   if (ADMIN && !ME) askWho();
   // quietly pre-download the city map once (works offline later)
   setTimeout(() => { const c = navigator.connection; if (!LS.get("offMap", 0) && !(c && (c.saveData || /2g/.test(c.effectiveType || "")))) offlineMap(); }, 6000);

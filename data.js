@@ -2,7 +2,7 @@
 const CAT = {
   tarix:{az:"Tarix",c:"#d9a54a"}, muzey:{az:"Muzey",c:"#a98bd6"}, kilse:{az:"Kilsə",c:"#e0c08a"},
   park:{az:"Park",c:"#6fae7d"}, yemek:{az:"Yemək/kafe",c:"#e0604a"}, bazar:{az:"Milad bazarı",c:"#f08a6a"},
-  metro:{az:"Metro/nəqliyyat",c:"#6a9fd8"},
+  metro:{az:"Metro/nəqliyyat",c:"#6a9fd8"}, shop:{az:"Alış-veriş",c:"#8a5cf6"},
 };
 // [id, name, cat, lat, lng, description]
 const P = [
@@ -70,6 +70,15 @@ const P = [
  ["xm-schonbrunn","Milad bazarı – Schönbrunn","bazar",48.1862,16.3130,"Saray həyətində. 6 noyabrdan açıqdır, giriş pulsuzdur."],
  ["xm-amhof","Milad bazarı – Am Hof","bazar",48.2106,16.3680,"14 noyabrdan açıqdır. Kiçik və sakit bazardır."],
  ["xm-freyung","Milad bazarı – Freyung","bazar",48.2119,16.3652,"13 noyabrdan açıqdır. Ənənəvi əl işləri satılır."],
+ ["xm-karlsplatz","Art Advent – Karlsplatz","bazar",48.1992,16.3713,"Sənət və əl işləri bazarı Karlskirche-nin qarşısında. 13.11–23.12, hər gün 12:00–20:00."],
+ ["xm-spittelberg","Milad bazarı – Spittelberg","bazar",48.2032,16.3551,"Dar köhnə küçələrdə ən romantik bazar: əl işləri, ekoloji məhsullar. 13.11–23.12."],
+ // shopping
+ ["shop-kaerntner","Kärntner Straße və Graben","shop",48.2052,16.3712,"Mərkəzin əsas alış-veriş küçəsi: Zara, H&M, Mango, Swarovski, Steffl univermağı. Otelə 3 dəqiqə."],
+ ["shop-goldenes","Goldenes Quartier və Kohlmarkt","shop",48.2101,16.3679,"Lüks markalar küçəsi: Louis Vuitton, Prada, Saint Laurent, Miu Miu, Chanel və s."],
+ ["shop-wienmitte","The Mall – Wien Mitte","shop",48.2063,16.3845,"Otelə ən yaxın ticarət mərkəzi (~10 dəq piyada). Yağışlı gün üçün rahatdır."],
+ ["shop-mahue","Mariahilfer Straße","shop",48.1988,16.3527,"Vyananın ən uzun alış-veriş küçəsi: Zara, Massimo Dutti, Nike, Peek & Cloppenburg, Gerngross. U3 Neubaugasse."],
+ ["shop-donauzentrum","Westfield Donau Zentrum","shop",48.2425,16.4337,"Avstriyanın ən böyük ticarət mərkəzlərindən biri, bütün kütləvi markalar bir damın altında. U1 Kagran."],
+ ["shop-parndorf","Designer Outlet Parndorf","shop",47.9803,16.8585,"160-dan çox premium marka, 30–70% endirim (Burberry, Gucci, Michael Kors, Furla…). Vyanadan ~40 dəq; Operadan shuttle var."],
  // transit
  ["u-stephansplatz","U Stephansplatz (U1, U3)","metro",48.2083,16.3721,"Mərkəzin əsas metro stansiyası."],
  ["u-karlsplatz","U Karlsplatz (U1, U2, U4)","metro",48.2007,16.3700,"Opera, Karlskirche və Naschmarkt üçün qovşaq."],
@@ -112,7 +121,8 @@ const EX = {
  neni:{g:4.3,n:6503,pid:"ChIJTaKjjIQHbUcRr1Cvk38JjHI",lvl:2,h:["08:00-23:00","08:00-23:00","08:00-23:00","08:00-23:00","08:00-23:00","08:00-23:00","09:00-21:00"]},
  papas:{g:4.4,n:2490,pid:"ChIJ2QPvpIwHbUcRxJ-6-1tHHDs",lvl:2,h:["07:00-23:00","07:00-23:00","07:00-23:00","07:00-23:00","07:00-23:00","07:00-23:00","10:00-21:00"]},
  bitzinger:{g:4.1,n:7276,pid:"ChIJQRR7i5sHbUcRA1cK2H2VnwE",lvl:1,pr:"Kolbasa ~7 €",h:"08:00-04:00"},
- "xm-rathaus":{free:1,h:"10:00-22:00"}, "xm-schonbrunn":{free:1,h:"10:00-21:00"}, "xm-stephan":{free:1,h:D7("14:00-21:00","10:00-21:30")}, "xm-amhof":{free:1,h:D7("11:00-21:00","10:00-21:00")}, "xm-freyung":{free:1,h:"10:00-21:00"},
+ "xm-rathaus":{free:1,h:"10:00-22:00"}, "xm-karlsplatz":{free:1,h:"12:00-21:00"}, "xm-spittelberg":{free:1,h:D7("14:00-21:30","11:00-21:30")},
+ "shop-parndorf":{h:["09:00-21:00","09:00-21:00","09:00-21:00","09:00-21:00","09:00-21:00","09:00-18:00",null]}, "xm-schonbrunn":{free:1,h:"10:00-21:00"}, "xm-stephan":{free:1,h:D7("14:00-21:00","10:00-21:30")}, "xm-amhof":{free:1,h:D7("11:00-21:00","10:00-21:00")}, "xm-freyung":{free:1,h:"10:00-21:00"},
 };
 const LVL={1:"€ · ~5–15 € adambaşı",2:"€€ · ~15–35 € adambaşı",3:"€€€ · ~35–60 € adambaşı"};
 const POI = P.map(a=>Object.assign({id:a[0],name:a[1],cat:a[2],lat:a[3],lng:a[4],d:a[5]},EX[a[0]]||{}));
@@ -322,3 +332,29 @@ const STORIES = {
   minoriten: { s: "Minoritenkirche qotik üslubda XIV əsrdə tikilib. İçəridə Leonardo da Vinçinin “Son şam yeməyi” əsərinin böyük mozaika surəti var — onu Napoleon sifariş edib.", f: ["XIV əsr qotik kilsəsi", "“Son şam yeməyi”nin mozaika surəti", "Hofburqa çox yaxındır"], t: "Hofburqdan çıxanda 2 dəqiqəlik baxış üçün gir." },
   augustiner: { s: "Augustinerkirche Habsburq sarayının kilsəsi olub. Burada Mariya Tereza (1736) və Frans İosif ilə Sisi (1854) evləniblər. Kilsədəki “Ürəklər məqbərəsi”ndə Habsburqların ürəkləri gümüş qablarda saxlanır.", f: ["Sisi ilə Frans İosifin toyu burada olub", "Habsburqların ürəkləri burada saxlanır", "Hofburqun bir hissəsidir"], t: "Albertinanın yanındadır — kilsə pulsuzdur." },
 };
+
+
+// ---------- guides (static, verified Nov 2026) ----------
+const MARKETS = [
+  { id: "xm-rathaus", when: "13.11–26.12", hrs: "hər gün 10:00–22:00", why: "Ən böyük və ən məşhur bazar; işıqlandırılmış park, Rathaus fonu.", eat: "Kartoffelpuffer (kartof blini), Maroni (qızardılmış şabalıd), Langos" },
+  { id: "xm-schonbrunn", when: "6.11–6.1", hrs: "hər gün 10:00–21:00", why: "Saray həyətində, ən “imperator” atmosferli bazar.", eat: "Kaiserschmarrn, isti Punsch, şokoladlı meyvə" },
+  { id: "xm-stephan", when: "noyabr–dekabr", hrs: "həftəiçi 14:00-dan", why: "Kafedralın düz yanında — gəzinti zamanı bir fincan Punsch üçün.", eat: "Glühwein / Kinderpunsch, Lebkuchen" },
+  { id: "xm-karlsplatz", when: "13.11–23.12", hrs: "hər gün 12:00–20:00 (yemək 21:00-dək)", why: "Kütləvi suvenir yox — həqiqi sənətkar işləri, gözəl hədiyyələr.", eat: "Ekoloji Punsch, pendirli çörək" },
+  { id: "xm-spittelberg", when: "13.11–23.12", hrs: "həftəiçi ~14:00-dan, axşam ~21:30-dək", why: "Dar, daş döşənmiş küçələrdə ən romantik bazar.", eat: "Əl işi hədiyyələr, isti içkilər" },
+  { id: "xm-amhof", when: "13.11–23.12", hrs: "~10/11:00–21:00", why: "Sakit, kiçik bazar — antikvar və əl işləri.", eat: "Bratwurst (🐷 donuz əti ola bilər — soruş)" },
+  { id: "xm-freyung", when: "13.11–23.12", hrs: "~10/11:00–21:00", why: "Ənənəvi Avstriya əl işləri, şam bəzəkləri.", eat: "Bal, şam, ağac oyuncaqlar" },
+];
+const MARKET_TIPS = [
+  "🍷 Glühwein və Punsch alkoqolludur. Alkoqolsuz istəsən: <b>“Kinderpunsch, bitte”</b>.",
+  "☕ Fincan üçün depozit (Häferlpfand) alınır — fincanı geri versən pul qaytarılır, saxlasan suvenir olur.",
+  "🐷 Bratwurst, Käsekrainer, Leberkäse adətən donuz ətidir. Təhlükəsiz seçimlər: Langos, Maroni, Kartoffelpuffer, Kaiserschmarrn, şokoladlı meyvə.",
+  "💳 Kiçik daxmaların çoxu yalnız nağd qəbul edir — 20–30 € nağd saxla.",
+  "🕔 Ən gözəl vaxt: qaranlıq düşəndən sonra (16:30-dan) — işıqlar yanır.",
+];
+const SHOP_TIPS = [
+  "🕘 Mağazalar adətən 10:00–19:00/20:00 açıqdır, şənbə 18:00-dək, <b>bazar günü bağlıdır</b>. Səfər çərşənbə axşamı–cümədir — hamısı açıq olacaq.",
+  "🧾 Bir mağazada bir çekdə <b>75,01 €-dan çox</b> alsan “Tax free, bitte” de — ~12–14% geri alırsan. Parndorf-da bütün markalar tax-free-dir.",
+  "🛍 Almadan əvvəl “🛍 Qiymət” ilə Bakı və Türkiyə qiymətini yoxla.",
+  "🌧 Yağışlı gündə: The Mall Wien Mitte (otelə yaxın) və ya Donau Zentrum.",
+];
+const PARNDORF = { url: "https://www.mcarthurglen.com/en/outlets/at/designer-outlet-parndorf/plan-your-visit/", hrs: "B.e.–Cümə 9:00–21:00, Şənbə 9:00–18:00", shuttle: "Operanın qarşısından shuttle avtobus (onlayn bilet). Həftəiçi Vyanadan təxminən 9:30, 10:30, 11:30, 13:30; geri 16:00–20:00 arası. Dəqiq cədvəli saytda yoxla.", tip: "Yarım günlük plan lazımdır. 18 və ya 19 noyabr uyğundur." };

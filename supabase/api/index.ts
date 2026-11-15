@@ -140,12 +140,13 @@ Deno.serve(async (req) => {
       case "photo.add": {
         const t = String(b.thumb || "");
         if (!t.startsWith("data:image/jpeg;base64,") || t.length > 115000) return json({ error: "invalid" }, 400);
-        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who, name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t });
+        if (!who) return json({ error: "no_user" }, 403);
+        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who, name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t, priv: b.priv === true });
         if (error) throw error;
         return json({ ok: true });
       }
       case "photos": {
-        const { data, error } = await sb.from("photos").select("id,ts,who,name,poi,thumb").order("ts", { ascending: false }).limit(80);
+        const { data, error } = await sb.from("photos").select("id,ts,who,name,poi,thumb,priv").or(`priv.eq.false,who.eq.${who || "-"}`).order("ts", { ascending: false }).limit(120);
         if (error) throw error;
         return json({ photos: data });
       }
@@ -153,6 +154,61 @@ Deno.serve(async (req) => {
         const { data, error } = await sb.from("price_log").select("id,ts,who,brand,name,code,vienna_eur,result,thumb").order("ts", { ascending: false }).limit(100);
         if (error) throw error;
         return json({ prices: data });
+      }
+
+      // ---- private per-person lists (only the owner ever sees them) ----
+      case "gifts": {
+        if (!who) return json({ gifts: [] });
+        const { data, error } = await sb.from("gifts").select("*").eq("by", who).order("ts", { ascending: true });
+        if (error) throw error;
+        return json({ gifts: data });
+      }
+      case "gift.add": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const recipient = String(b.recipient ?? "").trim().slice(0, 40), item = String(b.item ?? "").trim().slice(0, 100);
+        if (!recipient || !item) return json({ error: "invalid" }, 400);
+        const budget = Number(b.budget) > 0 ? Math.round(Number(b.budget) * 100) / 100 : null;
+        const { data, error } = await sb.from("gifts").insert({ by: who, recipient, item, budget, ts: Date.now() }).select().single();
+        if (error) throw error;
+        return json({ gift: data });
+      }
+      case "gift.upd": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const upd: Record<string, unknown> = {};
+        if (typeof b.bought === "boolean") upd.bought = b.bought;
+        if (b.eur !== undefined) upd.eur = Number(b.eur) > 0 ? Math.round(Number(b.eur) * 100) / 100 : null;
+        if (b.store !== undefined) upd.store = String(b.store ?? "").slice(0, 60);
+        if (b.item !== undefined) upd.item = String(b.item).slice(0, 100);
+        if (b.budget !== undefined) upd.budget = Number(b.budget) > 0 ? Number(b.budget) : null;
+        const { data, error } = await sb.from("gifts").update(upd).eq("id", String(b.id)).eq("by", who).select().single();
+        if (error) throw error;
+        return json({ gift: data });
+      }
+      case "gift.del": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const { error } = await sb.from("gifts").delete().eq("id", String(b.id)).eq("by", who);
+        if (error) throw error;
+        return json({ ok: true });
+      }
+      case "notes": {
+        if (!who) return json({ notes: [] });
+        const { data, error } = await sb.from("notes").select("id,day,txt,ts").eq("by", who).order("ts", { ascending: true });
+        if (error) throw error;
+        return json({ notes: data });
+      }
+      case "note.add": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const txt = String(b.txt ?? "").trim().slice(0, 2000), day = String(b.day ?? "").slice(0, 10);
+        if (!txt || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: "invalid" }, 400);
+        const { data, error } = await sb.from("notes").insert({ by: who, day, txt, ts: Date.now() }).select("id,day,txt,ts").single();
+        if (error) throw error;
+        return json({ note: data });
+      }
+      case "note.del": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const { error } = await sb.from("notes").delete().eq("id", String(b.id)).eq("by", who);
+        if (error) throw error;
+        return json({ ok: true });
       }
 
       case "gt": return await freeTranslate(b);
