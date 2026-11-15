@@ -863,7 +863,7 @@ const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karls
 function initMap() {
   if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd", attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>' }).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
   poiLayer = L.layerGroup().addTo(map); alertLayer = L.layerGroup().addTo(map); hotelLayer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map); frLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
   drawPOI(); mapAlerts(); mapHotel(); mapFriends(); mapMe();
   map.on("zoomend", drawPOI);
@@ -977,13 +977,9 @@ function renderMore() {
   const B = $("#moreBody");
   if (moreTab === "info") {
     const off = LS.get("offMap", 0);
-    B.innerHTML = `<button class="btn pri wide" id="helpBtn2">❓ Necə istifadə edim?</button><div class="card mt"><h3>📥 Oflayn xəritə</h3><p class="mute sm">Mərkəz, Schönbrunn və Prater xəritəsi telefona yüklənir — internet olmayanda da açılır.</p>
-      <button class="btn ${off ? "" : "pri"} wide" id="offBtn">${off ? "✓ Yüklənib · yenilə" : "📥 Yüklə (~5–10 MB)"}</button><div class="bar mt" id="offBar" hidden><i style="width:0"></i></div></div>
+    B.innerHTML = `<button class="btn pri wide" id="helpBtn2">❓ Necə istifadə edim?</button><div class="card mt"><h3>📶 İnternetsiz</h3><p class="mute sm">Xəritədə baxdığın hissələr telefonda yadda qalır və internet olmayanda da açılır. Tərcümə ifadələri, hekayələr, plan və otel məlumatı da internetsiz işləyir.</p></div>
      <div class="card mt"><h3>🎟 Biletlər (rəsmi saytlar)</h3><ul class="list">${Object.entries(TICKETS).filter(([id]) => byId[id]).map(([id, t]) => `<li><div class="grow"><b>${esc(short(byId[id].name))}</b>${byId[id].pr ? `<span class="s2">💶 ${esc(byId[id].pr)}</span>` : ""}<span class="s2">${esc(t[1])}</span></div><a class="btn s" href="${t[0]}" target="_blank" rel="noopener">Bilet ›</a></li>`).join("")}</ul></div>` + INFO_HTML;
     $("#helpBtn2").onclick = helpScreen;
-    $("#offBtn").onclick = async () => { const bar = $("#offBar"); bar.hidden = false; $("#offBtn").disabled = true; $("#offBtn").textContent = "Yüklənir…";
-      const ok = await offlineMap((d, t) => { bar.firstElementChild.style.width = Math.round(d / t * 100) + "%"; $("#offBtn").textContent = `Yüklənir… ${d}/${t}`; });
-      toast(ok ? "✓ Xəritə oflayn hazırdır" : "Bu brauzer dəstəkləmir"); renderMore(); };
   }
   if (moreTab === "alb") renderAlbum(B);
   if (moreTab === "pack") renderPack(B);
@@ -1060,7 +1056,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "15";
+const APPV = "16";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1310,8 +1306,6 @@ function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
   renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome());
   if (ADMIN && !ME) askWho();
-  // quietly pre-download the city map once (works offline later)
-  setTimeout(() => { const c = navigator.connection; if (!LS.get("offMap", 0) && !(c && (c.saveData || /2g/.test(c.effectiveType || "")))) offlineMap(); }, 6000);
   setInterval(() => { if (!document.hidden && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
 (function boot() {
