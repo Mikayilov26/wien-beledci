@@ -143,6 +143,12 @@ nav button.on{color:var(--red)}
 .mapbtns button{width:46px;height:46px;border-radius:14px;background:#fff;box-shadow:var(--sh);font-size:20px;font-weight:700}
 .sheet{position:absolute;left:0;right:0;bottom:0;z-index:600;background:var(--card);border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.12);padding:8px 16px 16px;max-height:68%;overflow-y:auto;transform:translateY(105%);transition:transform .22s ease}
 .sheet.on{transform:none}
+.sheet,.sheet .btn,.mapbtns button,.mapui .chip{touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,0,0,.06)}
+.sheet a{-webkit-touch-callout:none}
+.pbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pbtns .btn{min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center}
+.pbtns .btn.pri{grid-column:1/-1}
+.lbl{pointer-events:auto;cursor:pointer}
 .grab{width:40px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 10px}
 .x{position:absolute;right:12px;top:10px;width:32px;height:32px;border-radius:50%;background:var(--soft);font-size:18px}
 .stat{display:flex;gap:18px;margin:10px 0}
@@ -356,7 +362,7 @@ details summary{cursor:pointer;list-style:none}
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="data.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="data.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

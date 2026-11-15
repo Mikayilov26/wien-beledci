@@ -11,7 +11,7 @@ const LS = {
   get(k, d) { try { const v = localStorage.getItem("wb." + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("wb." + k, JSON.stringify(v)); } catch (e) {} },
 };
-function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("on"), 2600); }
+function toast(t, ms) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("on"), ms || 2600); }
 const short = n => { n = String(n || ""); const m = n.match(/^Milad bazarı – (.+)$/); return m ? "🎄 " + m[1] : n.split(" (")[0].split(" – ")[0]; };
 const AZM = ["yan", "fev", "mar", "apr", "may", "iyn", "iyl", "avq", "sen", "okt", "noy", "dek"];
 const fmtT = t => { const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(t)); const o = {}; p.forEach(x => o[x.type] = x.value); return `${o.day} ${AZM[o.month - 1]}, ${o.hour}:${o.minute}`; };
@@ -161,17 +161,32 @@ function planGuess() {
   let last = null; for (const it of day.items) if (toMin(it[0]) <= now.mins && it[3]) last = it;
   return last ? byId[last[3]] : null;
 }
+let gpsWatch = null, gpsCentered = false, roughWarned = false;
+function onFix(p) {
+  const c = p.coords, acc = c.accuracy || 0;
+  // ignore a much worse fix right after a good one (iOS sometimes mixes in cell-tower positions)
+  if (S.me && S.me.src === "gps" && S.me.acc && acc > Math.max(150, S.me.acc * 4) && Date.now() - S.me.ts < 45000) return;
+  if (!setMe(c.latitude, c.longitude, "gps", acc)) return;
+  if (!gpsCentered && map && !S.dest && $("#v-map").classList.contains("on")) { gpsCentered = true; map.setView([c.latitude, c.longitude], Math.max(map.getZoom(), 16)); }
+  if (acc > 600 && !roughWarned) { roughWarned = true; setTimeout(() => { if (S.me && S.me.acc > 600) toast("📍 Yer təxminidir (±" + Math.round(S.me.acc) + " m). iPhone: Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “Dəqiq məkan” aç", 7000); }, 20000); }
+}
+function onGpsErr(e) {
+  if (e.code === 1) S.gps = "denied"; else if (S.gps !== "on") S.gps = "off";
+  if (!S.me) { const g = planGuess(); if (g) setMe(g.lat, g.lng, "plan"); }
+  renderLoc();
+}
 function startGPS() {
   if (!navigator.geolocation) { S.gps = "off"; renderLoc(); return; }
   try {
-    navigator.geolocation.watchPosition(
-      p => setMe(p.coords.latitude, p.coords.longitude, "gps", p.coords.accuracy),
-      e => { S.gps = e.code === 1 ? "denied" : "off"; if (!S.me) { const g = planGuess(); if (g) setMe(g.lat, g.lng, "plan"); } renderLoc(); },
-      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+    if (gpsWatch != null) navigator.geolocation.clearWatch(gpsWatch);
+    gpsWatch = navigator.geolocation.watchPosition(onFix, onGpsErr, { enableHighAccuracy: true, maximumAge: 10000, timeout: 25000 });
   } catch (e) { S.gps = "off"; renderLoc(); }
 }
+// iPhone pauses GPS in the background: restart it every time the app comes back
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.gps !== "denied") startGPS(); });
 $("#locChip").onclick = () => {
   if (S.gps === "denied") return alertBox("📍 GPS icazəsi bağlıdır", "iPhone: <b>Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “İstifadə zamanı”</b>. Sonra səhifəni yenilə.");
+  if (S.gps !== "on") startGPS();
   goView("map"); if (S.me && map) map.setView([S.me.lat, S.me.lng], 16);
 };
 function alertBox(title, html) { $("#bigBox").innerHTML = `<h3 style="font-size:20px">${title}</h3><p class="mute" style="text-align:left">${html}</p><button class="btn pri wide" id="bbX">Oldu</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on"); }
@@ -862,7 +877,7 @@ let map = null, poiLayer = null, meLayer = null, routeLayer = null, alertLayer =
 const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
 function initMap() {
   if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
-  map = L.map("map", { zoomControl: false, attributionControl: true }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
+  map = L.map("map", { zoomControl: false, attributionControl: true, preferCanvas: true, renderer: L.canvas ? L.canvas({ padding: 0.5, tolerance: 14 }) : undefined, tapTolerance: 20 }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
   // map background: OpenStreetMap; if it fails repeatedly, switch to the OSM Germany mirror automatically
   const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
   const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: OSM_ATTR });
@@ -881,8 +896,11 @@ function drawPOI() {
     if (p.cat === "metro" && S.filter !== "metro" && z < 16) return;
     const low = p.g && p.g < MIN_R;
     const m = L.circleMarker([p.lat, p.lng], { radius: p.cat === "metro" ? 6 : 9, color: "#fff", weight: 2, fillColor: CAT[p.cat].c, fillOpacity: low ? .45 : 1 }).addTo(poiLayer);
-    m.on("click", () => openPoi(p));
-    if ((MAJOR.has(p.id) && z >= 14) || z >= 17 || (S.filter !== "all" && z >= 15)) m.bindTooltip(short(p.name) + (p.g ? ` ★${p.g}` : ""), { permanent: true, direction: "right", offset: [8, 0], className: "lbl" });
+    m.on("click", (e) => { if (e && e.originalEvent && L.DomEvent) L.DomEvent.stop(e.originalEvent); openPoi(p); });
+    if ((MAJOR.has(p.id) && z >= 14) || z >= 17 || (S.filter !== "all" && z >= 15)) {
+      m.bindTooltip(short(p.name) + (p.g ? ` ★${p.g}` : ""), { permanent: true, direction: "right", offset: [8, 0], className: "lbl", interactive: true });
+      const tt = m.getTooltip && m.getTooltip(); if (tt && tt.on) tt.on("click", () => openPoi(p));
+    }
   });
 }
 function mapMe() { if (!map || !meLayer) return; meLayer.clearLayers(); if (!S.me) return;
@@ -897,7 +915,7 @@ $$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$
 $("#grpBtn").classList.toggle("on", !!S.share);
 $("#grpBtn").onclick = groupSheet;
 $("#hotBtn").onclick = () => { routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
-$("#meBtn").onclick = () => { if (S.me && map) map.setView([S.me.lat, S.me.lng], 16); else $("#locChip").click(); };
+$("#meBtn").onclick = () => { if (S.gps !== "on" && S.gps !== "denied") startGPS(); if (S.me && map) map.setView([S.me.lat, S.me.lng], 17); else $("#locChip").click(); };
 $("#sheetX").onclick = () => $("#sheet").classList.remove("on");
 function openPoi(p) {
   const d = S.me ? dist(S.me, p) : null, an = alertNear(p);
@@ -906,8 +924,8 @@ function openPoi(p) {
    <p class="mute" style="margin:8px 0">${esc(p.d)}</p>${price(p) ? `<div class="sm">💶 ${esc(price(p))}</div>` : ""}
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
    ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}${PHOTO[p.id] ? `<div class="note">📸 ${esc(PHOTO[p.id][0])} <b>${esc(PHOTO[p.id][1])}</b></div>` : ""}
-   <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
-  $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
+   <div class="pbtns mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">🗺 Google</a></div>`;
+  $("#sheet").scrollTop = 0; $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
 function segOff(a, b, pt) { const kx = 111320 * Math.cos(48.2 * Math.PI / 180), ky = 111320; const ax = a.lng * kx, ay = a.lat * ky, bx = b.lng * kx, by = b.lat * ky, px = pt.lng * kx, py = pt.lat * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)); return Math.hypot(px - (ax + t * dx), py - (ay + t * dy)); }
@@ -1041,15 +1059,23 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "17";
+const APPV = "18";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
     const v = (await (await fetch("version.txt?t=" + Date.now(), { cache: "no-store" })).text()).trim();
-    if (v && v !== APPV && LS.get("reloadedFor", "") !== v) { LS.set("reloadedFor", v); toast("🔄 Yeni versiya — yenilənir…"); setTimeout(() => location.reload(), 700); }
+    if (!v || v === APPV) return;
+    // reload at most once per 2 minutes for the same version (no loops), but keep trying until the new code is in
+    const last = LS.get("reloadedFor", null), now = Date.now();
+    if (last && last.v === v && now - last.t < 120000) return;
+    LS.set("reloadedFor", { v, t: now }); toast("🔄 Yeni versiya — yenilənir…");
+    try { const rg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (rg) await rg.update(); } catch (e) {}
+    setTimeout(() => location.reload(), 700);
   } catch (e) {}
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
+window.addEventListener("pageshow", () => checkVersion());
+setInterval(() => { if (!document.hidden) checkVersion(); }, 10 * 60000);
 
 function modal(html) { $("#bigBox").innerHTML = html + `<button class="btn wide mt" id="mdX">Bağla</button>`; $("#bigModal").classList.add("on"); $("#mdX").onclick = () => $("#bigModal").classList.remove("on"); }
 const closeModal = () => $("#bigModal").classList.remove("on");
@@ -1297,5 +1323,5 @@ function boot2() {
   S.code = readCode();
   if (!S.code || !S.u) { gate(S.code ? "Kənanın göndərdiyi şəxsi linki aç (sonunda &u=… olan)." : ""); return; }
   boot2();
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 })();

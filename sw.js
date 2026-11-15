@@ -1,5 +1,5 @@
 // Offline shell: network-first for app files, cache fallback. API calls are never cached.
-const CACHE = "wien-v10";
+const CACHE = "wien-v11";
 const SHELL = ["./", "index.html", "app.js", "data.js", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
@@ -10,7 +10,7 @@ self.addEventListener("fetch", e => {
   const isTile = (u.hostname === "tile.openstreetmap.org" || u.hostname === "tile.openstreetmap.de");
   e.respondWith(
     (isTile ? caches.match(e.request, { ignoreVary: true, ignoreSearch: true }).then(r => r || fetch(e.request).then(res => { const cl = res.clone(); caches.open(CACHE).then(c => c.put(e.request, cl)); return res; }))
-      : fetch(e.request).then(res => { if (res.ok) { const cl = res.clone(); caches.open(CACHE).then(c => c.put(e.request, cl)); } return res; }).catch(() => caches.match(e.request, { ignoreSearch: true })))
+      : (u.origin === self.location.origin ? fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(e.request)).then(res => { if (res.ok) { const cl = res.clone(); caches.open(CACHE).then(c => c.put(e.request, cl)); } return res; }).catch(() => caches.match(e.request, { ignoreSearch: true })))
   );
 });
 
