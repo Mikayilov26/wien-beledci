@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wien">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Wien Bələdçi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+:root{
+  --bg:#FAF7F2; --card:#FFFFFF; --soft:#F2EDE5; --line:#E6DED2;
+  --ink:#1D1B19; --mute:#6B645B; --dim:#9A9187;
+  --red:#C8102E; --red2:#A50D26; --gold:#B8862F; --green:#2E8B57; --blue:#2F6FB5;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --r:18px; --sh:0 1px 2px rgba(40,30,20,.05),0 6px 20px rgba(40,30,20,.06);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{border:0;background:none;cursor:pointer}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;margin:0;letter-spacing:-.01em;font-weight:700}
+a{color:var(--red)}
+[hidden]{display:none!important}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+header{padding:calc(var(--safe-t) + 8px) 16px 8px;display:flex;align-items:center;gap:10px;background:var(--bg)}
+.logo{width:34px;height:34px;border-radius:10px;background:var(--red);display:grid;place-items:center;color:#fff;font:700 18px Fraunces,serif;flex:none}
+.htitle{flex:1;min-width:0}
+.htitle b{display:block;font:700 18px Fraunces,serif}
+.htitle span{font-size:12px;color:var(--mute)}
+.loc{display:flex;align-items:center;gap:6px;max-width:52vw;padding:7px 11px;border-radius:99px;background:var(--card);border:1px solid var(--line);font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.loc i{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
+.loc.on i{background:var(--green);box-shadow:0 0 0 3px rgba(46,139,87,.2)}
+main{flex:1;position:relative;overflow:hidden}
+.view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 16px 28px;display:none}
+.view.on{display:block}
+#v-map{padding:0;overflow:hidden}
+nav{display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+nav button{flex:1;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:600;color:var(--dim)}
+nav button svg{width:24px;height:24px}
+nav button.on{color:var(--red)}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:14px;border:1px solid rgba(0,0,0,.02)}
+.mt{margin-top:12px}.mt2{margin-top:20px}
+.mute{color:var(--mute)}.dim{color:var(--dim)}.sm{font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 15px;border-radius:12px;background:var(--soft);font-weight:600;font-size:15px;text-decoration:none;color:var(--ink)}
+.btn.pri{background:var(--red);color:#fff}
+.btn.s{padding:7px 11px;font-size:13px;border-radius:10px}
+.btn:disabled{opacity:.5}
+.btn.wide{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.inp{width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;outline:none}
+.inp:focus{border-color:var(--red)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:8px 12px;border-radius:99px;background:var(--soft);font-size:14px;font-weight:600;color:var(--ink)}
+.chip.on{background:var(--ink);color:#fff}
+.hscroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.hscroll::-webkit-scrollbar{display:none}
+.hscroll .chip{white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 84px);transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:90;opacity:0;transition:opacity .2s;pointer-events:none;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+.spin{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--red);animation:sp 1s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* home */
+.hello{display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 12px}
+.hello h2{font-size:26px}
+.next{display:flex;gap:12px;align-items:center}
+.next .t{font:700 15px Fraunces,serif;color:var(--red);min-width:46px}
+.next b{display:block}
+.conv{display:flex;align-items:center;gap:10px}
+.conv .in{flex:1;display:flex;align-items:center;background:var(--soft);border-radius:14px;padding:4px 4px 4px 12px;min-width:0}
+.conv input{flex:1;min-width:0;border:0;background:none;font:700 24px Fraunces,serif;outline:none;padding:6px 0}
+.conv .cur{width:46px;height:42px;border-radius:11px;background:var(--card);font:700 20px Fraunces,serif;color:var(--red);box-shadow:var(--sh)}
+.conv .out{flex:1;min-width:0}
+.conv .out b{display:block;font:700 24px Fraunces,serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .out span{font-size:12px;color:var(--mute)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.tile{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:14px;text-align:left;cursor:pointer;min-height:104px}
+.tile .e{font-size:28px;line-height:1}
+.tile b{font-size:16px;margin-top:8px}
+.tile span{font-size:12.5px;color:var(--mute)}
+.tile.hero{grid-column:1/-1;flex-direction:row;align-items:center;gap:14px;min-height:0;background:linear-gradient(135deg,#C8102E,#8E0B21);color:#fff}
+.tile.hero .e{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:28px;flex:none}
+.tile.hero b{font-size:20px;margin:0;font-family:Fraunces,serif}
+.tile.hero span{color:rgba(255,255,255,.85);display:block}
+.tile.hero div b{display:block}
+.tile input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.bigbtn{width:100%;margin-top:12px;padding:16px;border-radius:var(--r);background:var(--ink);color:#fff;font-weight:700;font-size:17px}
+.alert{display:flex;gap:10px;padding:11px 12px;border-radius:14px;background:#FFF1EE;border:1px solid #F5C9C0;font-size:14px;margin-bottom:8px}
+.alert.info{background:#EEF4FB;border-color:#CFE0F3}
+.alert b{display:block}
+.wx{display:flex;gap:8px;overflow-x:auto}
+.wx div{flex:1;min-width:72px;background:var(--soft);border-radius:12px;padding:8px;text-align:center;font-size:12px;color:var(--mute)}
+.wx b{display:block;font:700 17px Fraunces,serif;color:var(--ink)}
+/* lists */
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+.list li:first-child{border-top:0}
+.grow{flex:1;min-width:0}
+.list b{display:block}
+.s2{display:block;font-size:13px;color:var(--mute)}
+.km{font-size:13px;font-weight:700;color:var(--red);text-align:right;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;margin-top:6px}
+.rt{font-size:13px;font-weight:700;color:var(--gold)}
+.rt.low{color:#B5651D}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--soft);color:var(--mute);margin:3px 4px 0 0}
+.pill.open{background:#E6F4EC;color:var(--green)}
+.pill.closed{background:#FBE9E7;color:#B23A2B}
+.pill.halal{background:#E5F3F1;color:#1F7A6B}
+/* result */
+.photo{width:100%;max-height:40vh;object-fit:cover;border-radius:var(--r);display:block}
+.ttl{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;margin:14px 0 8px}
+.ttl h2{font-size:24px}
+.story{font-size:17px;line-height:1.6;white-space:pre-wrap}
+.facts{margin:10px 0 0;padding-left:18px;color:var(--mute)}
+.note{font-size:13px;color:var(--mute);margin-top:10px}
+.msg{padding:10px 12px;border-radius:14px;margin:8px 0;font-size:15px;white-space:pre-wrap}
+.msg.me{background:#FBE9E7;margin-left:15%}
+.msg.ai{background:var(--soft)}
+.ask{display:flex;gap:8px;margin-top:10px}
+.ask .inp{flex:1}
+.back{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--mute);padding:6px 0 10px}
+.pbox{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.pbox div{background:var(--soft);border-radius:14px;padding:10px 6px;text-align:center}
+.pbox b{display:block;font:700 19px Fraunces,serif}
+.pbox span{font-size:11px;color:var(--mute);display:block}
+.pbox a{font-size:11px}
+.pbox .best{background:#E6F4EC;outline:2px solid var(--green)}
+/* map */
+#map{position:absolute;inset:0;background:#E9E4DB}
+.mapui{position:absolute;left:12px;right:12px;top:10px;z-index:500;display:flex;gap:8px;align-items:flex-start}
+.mapui .hscroll{flex:1}
+.mapui .chip{background:rgba(255,255,255,.95);box-shadow:var(--sh)}
+.mapui .chip.on{background:var(--ink);color:#fff}
+.mapbtns{position:absolute;right:12px;bottom:18px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.mapbtns button{width:46px;height:46px;border-radius:14px;background:#fff;box-shadow:var(--sh);font-size:20px;font-weight:700}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:600;background:var(--card);border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.12);padding:8px 16px 16px;max-height:68%;overflow-y:auto;transform:translateY(105%);transition:transform .22s ease}
+.sheet.on{transform:none}
+.grab{width:40px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 10px}
+.x{position:absolute;right:12px;top:10px;width:32px;height:32px;border-radius:50%;background:var(--soft);font-size:18px}
+.stat{display:flex;gap:18px;margin:10px 0}
+.stat b{display:block;font:700 22px Fraunces,serif}
+.stat span{font-size:12px;color:var(--mute)}
+.lbl{background:none!important;border:0!important;box-shadow:none!important;font:600 11.5px -apple-system,sans-serif;color:#1D1B19;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;padding:0!important}
+.lbl:before{display:none!important}
+.medot{width:18px;height:18px;border-radius:50%;background:#2F6FB5;border:3px solid #fff;box-shadow:0 0 0 6px rgba(47,111,181,.25)}
+.leaflet-container{font:inherit}
+/* segmented */
+.seg{display:flex;background:var(--soft);border-radius:14px;padding:4px;gap:4px}
+.seg button{flex:1;padding:10px 6px;border-radius:11px;font-weight:600;font-size:14px;color:var(--mute)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--sh)}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:4px 0 12px}
+.tabs button{padding:9px 14px;border-radius:99px;background:var(--soft);font-weight:600;font-size:14px;white-space:nowrap;color:var(--mute)}
+.tabs button.on{background:var(--ink);color:#fff}
+/* translator */
+.de{font:700 22px Fraunces,serif;color:var(--red);cursor:pointer}
+.phr{display:flex;gap:10px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.phr:first-child{border-top:0}
+.phr .grow span{font-size:13px;color:var(--mute)}
+.mic{width:56px;height:56px;border-radius:50%;background:var(--red);color:#fff;font-size:24px;flex:none;box-shadow:var(--sh)}
+.mic.on{animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(200,16,46,.5)}100%{box-shadow:0 0 0 18px rgba(200,16,46,0)}}
+.big-de{font:700 40px/1.2 Fraunces,serif;margin:12px 0}
+/* expenses */
+.person{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.person:first-child{border-top:0}
+.bal{font-weight:700;text-align:right}
+.bal.pos{color:var(--green)}.bal.neg{color:#B23A2B}
+.settle{background:var(--soft);border-radius:12px;padding:10px 12px;margin-top:6px}
+.sync{font-size:12px;padding:6px 10px;border-radius:10px;display:inline-block;margin-bottom:10px;background:#E6F4EC;color:var(--green)}
+.sync.warn{background:#FBE9E7;color:#B23A2B}
+/* plan */
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:50px 1fr;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.tl li:first-child{border-top:0}
+.tl .t{font-weight:700;color:var(--red);font-size:14px}
+.tl li.now{background:#FFF6E5;margin:0 -14px;padding:11px 14px}
+.tl .x2 span{font-size:14px;color:var(--mute);display:block}
+.lnk{font-size:13px;font-weight:600;color:var(--red);margin-right:12px;cursor:pointer;text-decoration:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stamp{background:var(--card);border-radius:14px;overflow:hidden;box-shadow:var(--sh);cursor:pointer}
+.stamp img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+.stamp div{padding:8px 10px;font-size:13px}
+.info h3{font-size:18px;margin-bottom:6px}
+.info ul{margin:6px 0 0;padding-left:18px}
+.info li{margin:5px 0;color:var(--mute)}
+.info li b{color:var(--ink)}
+.info .card+.card{margin-top:12px}
+.info .warn{background:#FFF1EE}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(20,15,10,.45);z-index:80;display:none;align-items:flex-end;justify-content:center}
+.modal.on{display:flex}
+.modal .box{background:var(--bg);border-radius:24px 24px 0 0;padding:20px 18px calc(var(--safe-b) + 20px);width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.who button{display:block;width:100%;text-align:left;padding:15px;margin-top:10px;border-radius:14px;background:var(--card);box-shadow:var(--sh);font-weight:700;font-size:17px}
+/* gate */
+#gate{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;justify-content:center;padding:30px}
+</style>
+</head>
+<body>
+<div id="gate" hidden>
+  <div class="logo" style="width:56px;height:56px;font-size:28px;border-radius:16px">W</div>
+  <h1 style="margin-top:16px;font-size:30px">Wien Bələdçi</h1>
+  <p class="mute">Səyahət kodunu daxil et (Kənandan aldığın linkdə var).</p>
+  <form id="gateF" class="ask"><input class="inp" id="gateIn" placeholder="Kod" autocapitalize="off" autocomplete="off"><button class="btn pri">Daxil ol</button></form>
+  <p class="note" id="gateMsg"></p>
+</div>
+
+<div id="app">
+  <header>
+    <div class="logo">W</div>
+    <div class="htitle"><b>Wien Bələdçi</b><span id="sub">17–20 noyabr</span></div>
+    <button class="loc" id="locChip"><i></i><span id="locTxt">Yer axtarılır…</span></button>
+  </header>
+  <main>
+    <!-- HOME -->
+    <section class="view on" id="v-home">
+      <div id="homeMain">
+        <div class="hello"><h2 id="hello">Salam 👋</h2><button class="lnk" id="whoBtn"></button></div>
+        <div id="alertsBar"></div>
+        <div class="card" id="nextCard"></div>
+        <div class="card mt conv">
+          <div class="in"><input id="convIn" inputmode="decimal" placeholder="0" aria-label="Məbləğ"><button class="cur" id="convCur">€</button></div>
+          <div class="out" id="convOut"></div>
+        </div>
+        <div class="tiles">
+          <label class="tile hero"><span class="e">📷</span><div><b>Yeri tanı</b><span>Şəkil çək — tarixini danışım</span></div><input type="file" accept="image/*" capture="environment" id="camIn"></label>
+          <label class="tile"><span class="e">🛍</span><b>Qiymət</b><span>Bakı və Türkiyədə neçəyədir?</span><input type="file" accept="image/*" capture="environment" id="priceIn"></label>
+          <button class="tile" data-go="tr"><span class="e">🗣</span><b>Tərcümə</b><span>Almanca ⇄ azərbaycanca</span></button>
+          <label class="tile"><span class="e">🍽</span><b>Menyu</b><span>Şəkil çək — tərcümə edim</span><input type="file" accept="image/*" capture="environment" id="menuIn"></label>
+          <label class="tile"><span class="e">🖼</span><b>Qalereya</b><span>Çəkilmiş şəkildən</span><input type="file" accept="image/*" id="galIn"></label>
+        </div>
+        <button class="bigbtn" id="recoBtn">✨ İndi hara gedək?</button>
+        <div id="recoOut"></div>
+        <div class="card mt" id="wxCard"></div>
+        <div id="installTip"></div>
+      </div>
+      <div id="result" hidden></div>
+    </section>
+
+    <!-- MAP -->
+    <section class="view" id="v-map">
+      <div id="map"></div>
+      <div class="mapui"><div class="hscroll" id="filters"></div></div>
+      <div class="mapbtns"><button id="meBtn" aria-label="Mənim yerim">◎</button></div>
+      <div class="sheet" id="sheet"><button class="x" id="sheetX" aria-label="Bağla">×</button><div class="grab"></div><div id="sheetBody"></div></div>
+    </section>
+
+    <!-- TRANSLATE -->
+    <section class="view" id="v-tr">
+      <div class="seg mt" id="trMode"><button data-m="say" class="on">🙋 Mən deyirəm</button><button data-m="listen">👂 Onlar deyir</button></div>
+      <div id="trSay">
+        <form class="ask" id="trF"><input class="inp" id="trIn" placeholder="Yaz və ya axtar: hesab, tualet…" autocomplete="off" autocapitalize="off"><button class="btn pri">→ DE</button></form>
+        <div id="trOut"></div>
+        <div class="card mt" id="phrList"></div>
+      </div>
+      <div id="trListen" hidden>
+        <div class="card mt" style="text-align:center">
+          <button class="mic" id="lsMic" aria-label="Dinlə">🎤</button>
+          <div class="sm mute" id="lsHint" style="margin-top:8px">Bas və telefonu danışan adama tut</div>
+          <div class="chips" style="justify-content:center;margin-top:10px" id="lsTarget"><button class="chip on" data-l="az">🇦🇿 Azərbaycanca</button><button class="chip" data-l="tr">🇹🇷 Türkcə</button></div>
+        </div>
+        <textarea class="inp mt" id="lsIn" rows="3" placeholder="Almanca mətn bura yazılacaq (əl ilə də yaza bilərsən)"></textarea>
+        <div class="card mt" id="lsOut" hidden></div>
+      </div>
+    </section>
+
+    <!-- EXPENSES -->
+    <section class="view" id="v-exp"><div id="expBody"></div></section>
+
+    <!-- PLAN -->
+    <section class="view" id="v-plan">
+      <div class="tabs" id="moreTabs"><button data-t="plan" class="on">🗓 Plan</button><button data-t="hotel">🏨 Otel</button><button data-t="alb">📷 Albom</button><button data-t="info">ℹ️ Məlumat</button></div>
+      <div id="morePlan"><div class="tabs" id="dayTabs"></div><div id="planBody"></div></div>
+      <div id="moreBody" hidden></div>
+    </section>
+  </main>
+  <nav id="nav">
+    <button class="on" data-v="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></svg>Ana</button>
+    <button data-v="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Xəritə</button>
+    <button data-v="tr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h9M8.5 3v2M6 5c0 4 3 7 6 8M11 5c-1 4-4 7-7 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg>Tərcümə</button>
+    <button data-v="exp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg>Xərclər</button>
+    <button data-v="plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Plan</button>
+  </nav>
+</div>
+
+<div class="modal" id="whoModal"><div class="box">
+  <h2 style="font-size:24px">👋 Sən kimsən?</h2>
+  <p class="mute sm">Xərclərdə avtomatik ödəyən kimi seçiləcəksən.</p>
+  <div class="who" id="whoBtns"></div>
+</div></div>
+<div class="modal" id="bigModal" style="align-items:center"><div class="box" style="border-radius:24px;text-align:center;margin:16px" id="bigBox"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
