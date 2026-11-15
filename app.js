@@ -24,7 +24,7 @@ function fm(v, dec) {
 const toNum = s => { const v = parseFloat(String(s || "").replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; };
 
 /* ---------- state ---------- */
-const HOTEL0 = { lat: 48.2056, lng: 16.3744, name: "HOME1 – Lumes Boutique Hotel", addr: "Weihburggasse 18-20, 1010 Wien", phone: "+43 1 9900385", ci: "15:00–21:00", co: "11:00-dək", note: "Self check-in otelidir." };
+const HOTEL0 = { lat: 48.2152, lng: 16.3787, name: "Hotel Stefanie", addr: "Taborstraße 12, 1020 Wien", phone: "+43 1 211500", ci: "15:00-dan", co: "11:00-dək", note: "24 saat resepsiya." };
 const DEFAULT_LIVE = { eurAzn: 1.96, eurTry: 55.2, weather: [], alerts: [] };
 const S = {
   code: null, me: null, gps: "wait", hotel: LS.get("hotel", null) || HOTEL0, album: LS.get("album", []),
@@ -304,7 +304,7 @@ function renderHome() {
   let a = "";
   todaysAlerts().filter(x => x.level !== "info").forEach(x => a += `<div class="alert"><span>⚠️</span><div><b>${esc(x.title)}</b><span class="mute">${esc(x.detail)}</span></div></div>`);
   if (now.date === "2026-11-20") {
-    const left = toMin("08:45") - now.mins;
+    const left = toMin("08:40") - now.mins;
     if (left > -150) a = `<div class="alert"><span>✈️</span><div><b>${left > 0 ? `Otelden çıxmağa ${Math.floor(left / 60)} saat ${left % 60} dəq qalıb` : "İndi hava limanına yola düş!"}</b><span class="mute">Uçuş 12:00, Terminal 1. Wien Mitte → CAT avtobusu. 10:00-da hava limanında ol.${expAll().some(e => e.tf) ? ` 🧾 ${expAll().filter(e => e.tf).length} tax-free çekin var — əvvəl gömrükdə möhürlət (+20 dəq).` : ""}</span></div></div>` + a;
   }
   $("#alertsBar").innerHTML = (typeof upcomingAlert === "function" ? upcomingAlert() : "") + a;
@@ -863,7 +863,13 @@ const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karls
 function initMap() {
   if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  // map background: OpenStreetMap; if it fails repeatedly, switch to the OSM Germany mirror automatically
+  const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: OSM_ATTR });
+  tiles.addTo(map);
+  let tErr = 0, tOk = 0, swapped = false;
+  if (tiles.on) tiles.on("tileload", () => tOk++);
+  if (tiles.on) tiles.on("tileerror", () => { if (++tErr >= 6 && tOk < 3 && !swapped && tiles.setUrl) { swapped = true; tiles.setUrl("https://tile.openstreetmap.de/{z}/{x}/{y}.png"); } });
   poiLayer = L.layerGroup().addTo(map); alertLayer = L.layerGroup().addTo(map); hotelLayer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map); frLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
   drawPOI(); mapAlerts(); mapHotel(); mapFriends(); mapMe();
   map.on("zoomend", drawPOI);
@@ -884,26 +890,6 @@ function mapMe() { if (!map || !meLayer) return; meLayer.clearLayers(); if (!S.m
   L.marker([S.me.lat, S.me.lng], { icon: L.divIcon({ className: "", html: '<div class="medot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false }).addTo(meLayer); }
 function mapAlerts() { if (!map || !alertLayer) return; alertLayer.clearLayers(); todaysAlerts().filter(a => a.lat && a.level !== "info").forEach(a => L.circle([a.lat, a.lng], { radius: a.r || 300, color: "#C8102E", weight: 2, dashArray: "6 4", fillOpacity: .12 }).bindTooltip("⚠ " + a.title).addTo(alertLayer)); }
 function mapHotel() { if (!map || !hotelLayer) return; hotelLayer.clearLayers(); if (S.hotel) L.marker([S.hotel.lat, S.hotel.lng], { icon: L.divIcon({ className: "", html: '<div style="font-size:26px">🏨</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).on("click", () => routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "Otelimiz" })).addTo(hotelLayer); }
-/* offline tiles: prefetch central Vienna into a cache the service worker serves from */
-const TILE_AREAS = [[48.195, 16.350, 48.222, 16.395, 13, 16], [48.200, 16.358, 48.214, 16.385, 17, 17], [48.176, 16.302, 48.190, 16.325, 14, 16], [48.200, 16.380, 48.220, 16.402, 15, 16]];
-const t2x = (lng, z) => Math.floor((lng + 180) / 360 * 2 ** z), t2y = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
-function tileList() {
-  const ret = (window.devicePixelRatio || 1) > 1 ? "@2x" : "", out = new Set();
-  TILE_AREAS.forEach(([la1, lo1, la2, lo2, z1, z2]) => { for (let z = z1; z <= z2; z++) for (let x = t2x(lo1, z); x <= t2x(lo2, z); x++) for (let y = t2y(la2, z); y <= t2y(la1, z); y++) out.add(`https://${"abcd"[Math.abs(x + y) % 4]}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${ret}.png`); });
-  return [...out];
-}
-let offBusy = false;
-async function offlineMap(onProg) {
-  if (offBusy || !("caches" in window)) return false; offBusy = true;
-  try {
-    const c = await caches.open("tiles-v1"), list = tileList(); let done = 0;
-    for (let i = 0; i < list.length; i += 6) {
-      await Promise.all(list.slice(i, i + 6).map(async u => { try { if (!(await c.match(u))) { const r = await fetch(u, { mode: "cors" }); if (r.ok) await c.put(u, r); } } catch (e) {} done++; }));
-      onProg && onProg(done, list.length);
-    }
-    LS.set("offMap", Date.now()); return true;
-  } finally { offBusy = false; }
-}
 function mapFriends() { if (!map || !frLayer) return; frLayer.clearLayers(); friendsList().forEach(f => L.marker([f.lat, f.lng], { icon: L.divIcon({ className: "", html: `<div class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</div>`, iconSize: null, iconAnchor: [12, 12] }) }).on("click", () => groupSheet()).addTo(frLayer)); }
 const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["shop", "🛍 Mağaza"], ["metro", "Ⓜ Metro"]];
 $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("");
@@ -976,7 +962,6 @@ function renderMore() {
   if (plan) return renderPlan();
   const B = $("#moreBody");
   if (moreTab === "info") {
-    const off = LS.get("offMap", 0);
     B.innerHTML = `<button class="btn pri wide" id="helpBtn2">❓ Necə istifadə edim?</button><div class="card mt"><h3>📶 İnternetsiz</h3><p class="mute sm">Xəritədə baxdığın hissələr telefonda yadda qalır və internet olmayanda da açılır. Tərcümə ifadələri, hekayələr, plan və otel məlumatı da internetsiz işləyir.</p></div>
      <div class="card mt"><h3>🎟 Biletlər (rəsmi saytlar)</h3><ul class="list">${Object.entries(TICKETS).filter(([id]) => byId[id]).map(([id, t]) => `<li><div class="grow"><b>${esc(short(byId[id].name))}</b>${byId[id].pr ? `<span class="s2">💶 ${esc(byId[id].pr)}</span>` : ""}<span class="s2">${esc(t[1])}</span></div><a class="btn s" href="${t[0]}" target="_blank" rel="noopener">Bilet ›</a></li>`).join("")}</ul></div>` + INFO_HTML;
     $("#helpBtn2").onclick = helpScreen;
@@ -994,7 +979,7 @@ function renderMore() {
         ${h.ci ? `<li><span>🔑</span><div class="grow"><b>Check-in</b><span class="s2">${esc(h.ci)}</span></div></li>` : ""}
         ${h.co ? `<li><span>🧳</span><div class="grow"><b>Check-out</b><span class="s2">${esc(h.co)}</span></div></li>` : ""}
       </ul>
-      <div class="note">🔐 Self check-in otelidir: giriş kodu/təlimat adətən Booking mesajı ilə gəlir — gəlməzdən əvvəl Booking-də yoxla. 12:00–13:00-da çatırsınız, check-in 15:00-dandır: çantaları saxlamağı otelə Booking-dən yaz. ${h.ci && /21/.test(h.ci) ? "Check-in 21:00-dək göstərilib — gec gələcəksinizsə otelə xəbər ver." : ""}</div></div>
+      <div class="note">🛎 Otelin 24 saat resepsiyası var. 12:00–13:00-da çatırsınız, check-in 15:00-dandır — çantaları resepsiyada saxlatmağı xahiş edin. Yaxınlıqda: Schwedenplatz (U1/U4) 5 dəq, Stephansdom ~12 dəq piyada. Check-in/out saatlarını Booking təsdiqində yoxla.</div></div>
      <details class="card mt"><summary class="sm mute">✏️ Otel məlumatını düzəlt</summary>
       <input class="inp mt" id="hName" placeholder="Otelin adı" value="${esc(h.name || "")}">
       <input class="inp mt" id="hAddr" placeholder="Ünvan" value="${esc(h.addr || "")}">
@@ -1056,7 +1041,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "16";
+const APPV = "17";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {

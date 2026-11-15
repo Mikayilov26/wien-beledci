@@ -73,9 +73,9 @@ const P = [
  ["xm-karlsplatz","Art Advent – Karlsplatz","bazar",48.1992,16.3713,"Sənət və əl işləri bazarı Karlskirche-nin qarşısında. 13.11–23.12, hər gün 12:00–20:00."],
  ["xm-spittelberg","Milad bazarı – Spittelberg","bazar",48.2032,16.3551,"Dar köhnə küçələrdə ən romantik bazar: əl işləri, ekoloji məhsullar. 13.11–23.12."],
  // shopping
- ["shop-kaerntner","Kärntner Straße və Graben","shop",48.2052,16.3712,"Mərkəzin əsas alış-veriş küçəsi: Zara, H&M, Mango, Swarovski, Steffl univermağı. Otelə 3 dəqiqə."],
+ ["shop-kaerntner","Kärntner Straße və Graben","shop",48.2052,16.3712,"Mərkəzin əsas alış-veriş küçəsi: Zara, H&M, Mango, Swarovski, Steffl univermağı. Otelə ~15 dəq piyada və ya taksi ilə 5 dəq."],
  ["shop-goldenes","Goldenes Quartier və Kohlmarkt","shop",48.2101,16.3679,"Lüks markalar küçəsi: Louis Vuitton, Prada, Saint Laurent, Miu Miu, Chanel və s."],
- ["shop-wienmitte","The Mall – Wien Mitte","shop",48.2063,16.3845,"Otelə ən yaxın ticarət mərkəzi (~10 dəq piyada). Yağışlı gün üçün rahatdır."],
+ ["shop-wienmitte","The Mall – Wien Mitte","shop",48.2063,16.3845,"Wien Mitte vağzalında ticarət mərkəzi. Yağışlı gün üçün rahatdır; CAT avtobusu da buradan gedir."],
  ["shop-mahue","Mariahilfer Straße","shop",48.1988,16.3527,"Vyananın ən uzun alış-veriş küçəsi: Zara, Massimo Dutti, Nike, Peek & Cloppenburg, Gerngross. U3 Neubaugasse."],
  ["shop-donauzentrum","Westfield Donau Zentrum","shop",48.2425,16.4337,"Avstriyanın ən böyük ticarət mərkəzlərindən biri, bütün kütləvi markalar bir damın altında. U1 Kagran."],
  ["shop-parndorf","Designer Outlet Parndorf","shop",47.9803,16.8585,"160-dan çox premium marka, 30–70% endirim (Burberry, Gucci, Michael Kors, Furla…). Vyanadan ~40 dəq; Operadan shuttle var."],
@@ -134,8 +134,8 @@ const PLAN = [
  {d:"2026-11-17",t:"17 noyabr",w:"Çərşənbə axşamı",title:"Gəliş və Köhnə şəhər",items:[
   ["11:00","Vyana hava limanına eniş","Pasport nəzarəti və baqaj üçün təxminən 45–60 dəqiqə ayır.",null,1],
   ["12:00","CAT avtobusu → Wien Mitte","Avtobus terminalı Terminal 3-ün qarşısındadır. Hər 12 dəqiqədən bir gedir, yol təxminən 21 dəqiqədir, bilet adambaşı 14,90 €. Ucuz variant: Railjet qatarı ilə Hauptbahnhof-a.","u-landstrasse",1],
-  ["12:40","Wien Mitte → otel (piyada ~10 dəq)","HOME1 – Lumes Boutique Hotel, Weihburggasse 18-20. Wien Mitte-dən təxminən 700 m-dir.","hotel"],
-  ["13:00","Otelə çantaları qoy","Check-in 15:00-dandır, otel self check-in-dir. Çantaları saxlamağı əvvəlcədən Booking-dən yaz, giriş təlimatını Booking mesajlarında yoxla.","hotel"],
+  ["12:30","Wien Mitte → Hotel Stefanie (taksi ~7 dəq)","Taborstraße 12. Çamadanla ən rahatı taksidir. Alternativ: U4 Landstraße → Schwedenplatz (2 dayanacaq) + 5 dəq piyada.","hotel"],
+  ["13:00","Otelə çantaları qoy","Check-in 15:00-dandır. Otelin 24 saat resepsiyası var — çantaları resepsiyada saxlatmağı xahiş edin.","hotel"],
   ["13:30","Nahar: Dom Schnitzel ★4.8","Stephansdomun yanındadır. Alternativ: Figlmüller ★4.3 (rezerv lazımdır).","domschnitzel"],
   ["15:00","Stephansdom + Stephansplatz bazarı","Kafedralın içi pulsuzdur. Qüllə və katakombalar ödənişlidir. Bazar saat 14:00-da açılır.","stephansdom"],
   ["16:30","Graben → Kohlmarkt → Hofburg","Axşam işıqları altında gəzinti. Yol üstündə Demel ★4.2-də Kaiserschmarrn sına.","graben"],
@@ -163,8 +163,8 @@ const PLAN = [
   ["19:30","Vida şam yeməyi: Plachutta ★4.3 və ya Melker Stiftskeller ★4.6","Hər ikisi üçün rezerv et.","plachutta"],
  ]},
  {d:"2026-11-20",t:"20 noyabr",w:"Cümə",title:"Dönüş günü",items:[
-  ["07:30","Səhər yeməyi və check-out","Check-out 11:00-dək. Çamadanları axşamdan yığ, açarı/kartı təlimata görə qaytar.","hotel"],
-  ["08:45","Otel → Wien Mitte (piyada ~10 dəq)","Weihburggasse-dən Wien Mitte (Marxergasse 1b) təxminən 700 m-dir. CAT avtobusunun dayanacağı buradadır. Şəhərdə baqaj təhvili hazırda işləmir.","u-landstrasse",1],
+  ["07:30","Səhər yeməyi və check-out","Çamadanları axşamdan yığ, otaq kartlarını resepsiyaya qaytar.","hotel"],
+  ["08:40","Otel → Wien Mitte (taksi ~7 dəq)","Taborstraße-dən Wien Mitte (Marxergasse 1b) çamadanla taksi ilə ən rahatdır — resepsiyadan çağırtdır. CAT avtobusu buradan gedir. Şəhərdə baqaj təhvili hazırda işləmir.","u-landstrasse",1],
   ["09:10","CAT avtobusu ilə hava limanına","Hər 12 dəqiqədən bir gedir, yol təxminən 21–25 dəqiqədir. Tıxac ehtimalına görə bu avtobusdan gecikmə.","u-landstrasse",1],
   ["09:40","Hava limanı → Terminal 1","Avtobus Terminal 3-ün qarşısında saxlayır. Terminal 1-ə piyada 5–10 dəqiqədir.",null],
   ["10:00","Terminal 1: qeydiyyat və pasport nəzarəti","Şengendən çıxışda növbə ola bilər. Tax Free qaytarırsansa, əlavə 20 dəqiqə ayır.",null,1],
@@ -288,7 +288,7 @@ const TICKETS = {
   riesenrad: ["https://www.wienerriesenrad.com", "Axşam işıqlarında daha gözəldir. Onlayn bilet növbəni qısaldır."],
   staatsoper: ["https://www.wiener-staatsoper.at", "Tamaşa olmayan saatlarda bina turu var — saatları saytda yoxla."],
   reitschule: ["https://www.srs.at", "Səhər məşqlərinə bilet tamaşadan ucuzdur — tarixləri saytda yoxla."],
-  hausdermusik: ["https://www.hausdermusik.com", "İnteraktiv musiqi muzeyi — otelə çox yaxındır, yağışlı hava üçün idealdır."],
+  hausdermusik: ["https://www.hausdermusik.com", "İnteraktiv musiqi muzeyi — yağışlı hava üçün idealdır."],
   mozarthaus: ["https://www.mozarthausvienna.at", "Motsartın yaşadığı mənzil, Stephansdomun arxasında."],
   kunsthaus: ["https://www.kunsthauswien.com", "Hundertwasser muzeyi; Hundertwasserhaus-un özü yalnız çöldən görünür."],
   zoo: ["https://www.zoovienna.at", "Dünyanın ən qədim zooparkı, Schönbrunn parkının içindədir."],
@@ -320,9 +320,9 @@ const STORIES = {
   graben: { s: "Graben Vyananın ən məşhur piyada küçəsidir; adı Roma dövründəki xəndəkdən gəlir. Ortadakı Taun sütunu (Pestsäule) 1679-cu il taun epidemiyasından sonra imperator I Leopoldun əmri ilə ucaldılıb. Küçə lüks mağazalar və kafelərlə doludur, Milad dövründə işıqlandırma xüsusilə gözəldir.", f: ["Adı “xəndək” deməkdir", "Taun sütunu 1679-cu il epidemiyasının xatirəsidir", "Kohlmarkt ilə Hofburqa çıxır"], t: "Axşam işıqlarında gəz, Kohlmarkt üzərindən Hofburqa get." },
   ankeruhr: { s: "Ankeruhr Hoher Markt meydanında iki binanı birləşdirən körpünün üzərindəki art nuvo saatıdır. 1911–1914-cü illərdə rəssam Frans Mətş tərəfindən yaradılıb. Saatın üzərində Vyana tarixinin 12 məşhur şəxsiyyətinin fiqurları gün ərzində bir-bir keçir.", f: ["1911–1914-də yaradılıb", "12 tarixi fiqur var", "Saat 12:00-da bütün fiqurlar musiqi ilə keçir"], t: "Günorta 12:00-da gəl — bütün fiqurlar musiqi ilə parad keçir." },
   kapuziner: { s: "Kapuzinergruft — İmperator məqbərəsi 1633-cü ildən Habsburq ailəsinin dəfn yeridir. Burada 150-yə yaxın Habsburq, o cümlədən Mariya Tereza (əri ilə birlikdə böyük barokko sarkofaqda), imperator Frans İosif, Sisi və oğulları Rudolf uyuyur.", f: ["1633-cü ildən istifadə olunur", "Mariya Terezanın ikili sarkofaqı buradadır", "Sisi və Frans İosif də buradadır"], t: "Qısa ziyarətdir (30–40 dəq) — Neuer Markt meydanındadır." },
-  hausdermusik: { s: "Haus der Musik interaktiv səs və musiqi muzeyidir. Bina vaxtilə Vyana Filarmoniyasının qurucusu Otto Nikolainin yaşadığı evdir. Burada virtual olaraq Vyana Filarmoniyasını idarə edə, səslərlə oynaya və Vyana bəstəkarlarını — Motsart, Bethoven, Ştraus və başqalarını tanıya bilərsən.", f: ["Filarmoniyanı virtual dirijor kimi idarə etmək olar", "Bina Otto Nikolainin evi olub", "Uşaqlar və böyüklər üçün interaktivdir"], t: "Otelə çox yaxındır — yağışlı və ya soyuq axşam üçün əla seçimdir." },
+  hausdermusik: { s: "Haus der Musik interaktiv səs və musiqi muzeyidir. Bina vaxtilə Vyana Filarmoniyasının qurucusu Otto Nikolainin yaşadığı evdir. Burada virtual olaraq Vyana Filarmoniyasını idarə edə, səslərlə oynaya və Vyana bəstəkarlarını — Motsart, Bethoven, Ştraus və başqalarını tanıya bilərsən.", f: ["Filarmoniyanı virtual dirijor kimi idarə etmək olar", "Bina Otto Nikolainin evi olub", "Uşaqlar və böyüklər üçün interaktivdir"], t: "Yağışlı və ya soyuq axşam üçün əla seçimdir — Kärntner Straße-yə yaxındır." },
   mozarthaus: { s: "Mozarthaus — Motsartın Vyanada yaşadığı mənzillərdən bu günə qalan yeganəsidir. Bəstəkar burada 1784–1787-ci illərdə yaşayıb və məşhur “Fiqaronun toyu” operasını bu evdə yazıb. Muzey onun Vyana həyatını, dostlarını və musiqisini göstərir.", f: ["Motsart burada 1784–1787-də yaşayıb", "“Fiqaronun toyu” burada yazılıb", "Stephansdomun arxasındadır"], t: "Stephansdomdan 2 dəqiqəlik yoldur." },
-  stadtpark: { s: "Stadtpark 1862-ci ildə açılıb və Vyananın ilk ictimai parkıdır. Ən məşhur yeri “vals kralı” İohann Ştrausun qızılı heykəlidir — Vyananın ən çox fotosu çəkilən abidələrindən biri. Park otelinizə çox yaxındır.", f: ["1862-ci ildə açılıb", "İohann Ştrausun qızılı heykəli buradadır", "Wien Mitte-yə yaxındır"], t: "Qızılı Ştraus heykəli ilə foto çəkdir — otelə 5–7 dəqiqədir." },
+  stadtpark: { s: "Stadtpark 1862-ci ildə açılıb və Vyananın ilk ictimai parkıdır. Ən məşhur yeri “vals kralı” İohann Ştrausun qızılı heykəlidir — Vyananın ən çox fotosu çəkilən abidələrindən biri. Park Wien Mitte-nin yanındadır.", f: ["1862-ci ildə açılıb", "İohann Ştrausun qızılı heykəli buradadır", "Wien Mitte-yə yaxındır"], t: "Qızılı Ştraus heykəli ilə foto çəkdir — Wien Mitte-dən 3 dəqiqədir." },
   secession: { s: "Secession binası 1897–1898-ci illərdə memar Yozef Mariya Olbrix tərəfindən Vyana Secession rəssamlar birliyi üçün tikilib. Damdakı qızılı “kələm” — əslində dəfnə yarpaqlarından günbəzdir. Girişdə “Hər dövrə öz sənəti, sənətə öz azadlığı” şüarı yazılıb. Zirzəmidə Klimtin məşhur “Bethoven frizi” saxlanır.", f: ["1897–1898-də tikilib", "Qızılı günbəz dəfnə yarpaqlarındandır", "Klimtin “Bethoven frizi” buradadır"], t: "Naschmarkt-ın başlanğıcındadır — ikisini birlikdə gəz." },
   heldenplatz: { s: "Heldenplatz — Qəhrəmanlar meydanı Hofburqun qarşısındakı geniş meydandır. Meydanda Savoyalı Şahzadə Eugen və Arxihersoq Karlın atlı heykəlləri durur. Yeni Hofburqun balkonu tarixdə ağır bir hadisə ilə yadda qalıb: 1938-ci ildə Avstriyanın Almaniyaya birləşdirilməsi burada elan edilib.", f: ["İki atlı heykəl: Eugen və Karl", "Yeni Hofburqun yarımdairəvi fasadı", "Volksgarten və Burggarten yanındadır"], t: "Hofburqdan Parlamentə gedərkən meydandan keç." },
   burggarten: { s: "Burggarten vaxtilə imperator ailəsinin şəxsi bağı olub. Burada art nuvo üslubunda şüşə Palmenhaus (1901–1905) və skripka açarı formasında gül yatağı olan Motsart abidəsi var. Palmenhaus-da kafe-restoran işləyir.", f: ["İmperatorun şəxsi bağı olub", "Palmenhaus art nuvo istixanasıdır", "Motsart abidəsi önündə skripka açarı var"], t: "Motsart abidəsi ilə foto çəkdir — Albertinadan 2 dəqiqədir." },
@@ -355,7 +355,7 @@ const SHOP_TIPS = [
   "🕘 Mağazalar adətən 10:00–19:00/20:00 açıqdır, şənbə 18:00-dək, <b>bazar günü bağlıdır</b>. Səfər çərşənbə axşamı–cümədir — hamısı açıq olacaq.",
   "🧾 Bir mağazada bir çekdə <b>75,01 €-dan çox</b> alsan “Tax free, bitte” de — ~12–14% geri alırsan. Parndorf-da bütün markalar tax-free-dir.",
   "🛍 Almadan əvvəl “🛍 Qiymət” ilə Bakı və Türkiyə qiymətini yoxla.",
-  "🌧 Yağışlı gündə: The Mall Wien Mitte (otelə yaxın) və ya Donau Zentrum.",
+  "🌧 Yağışlı gündə: The Mall Wien Mitte və ya Donau Zentrum (U1 ilə birbaşa — Schwedenplatz otelə 5 dəqiqədir).",
 ];
 const PARNDORF = { url: "https://www.mcarthurglen.com/en/outlets/at/designer-outlet-parndorf/plan-your-visit/", hrs: "B.e.–Cümə 9:00–21:00, Şənbə 9:00–18:00", shuttle: "Operanın qarşısından shuttle avtobus (onlayn bilet). Həftəiçi Vyanadan təxminən 9:30, 10:30, 11:30, 13:30; geri 16:00–20:00 arası. Dəqiq cədvəli saytda yoxla.", tip: "Yarım günlük plan lazımdır. 18 və ya 19 noyabr uyğundur." };
 
@@ -392,6 +392,6 @@ const HELP = [
   ["🗣 Tərcümə", `<ul><li><b>Mən deyirəm</b>: azərbaycanca yaz (səhv yazsan da tapır) → almanca + oxunuşu. <b>🔊</b> səsləndirir, <b>⛶</b> ekranı satıcıya göstər.</li><li><b>Onlar deyir</b>: <b>🎤</b> bas, telefonu danışan adama tut — azərbaycanca və ya türkcə tərcümə çıxır.</li></ul>`],
   ["💶 Xərclər", `<ul><li><b>👭 Ortaq</b>: məbləğ → kim ödədi → kimlər üçün → Əlavə et. Hamı eyni siyahını görür, kim kimə borcludur avtomatik hesablanır. Borc qaytarılanda <b>✓ Ödəndi</b> bas.</li><li><b>👤 Mənim xərclərim</b> 🔒: paltar, kosmetika kimi şəxsi xərclər; yalnız sən görürsən.</li><li><b>🎯 Büdcə</b>: öz büdcəni yaz, nə qədər qaldığını görürsən.</li><li>Səhv yazsan <b>✎</b> ilə düzəlt. İnternet olmasa da yaz — sonra özü göndərir.</li><li>75 €-dan çox alanda kassada <b>“Tax free, bitte”</b> de və <b>🧾 Tax-free</b> işarələ.</li></ul>`],
   ["🗓 Plan bölməsi", `<ul><li><b>Plan</b>: hər günün proqramı, rezervlər də burada görünür; axşam günün xülasəsi.</li><li><b>Otel</b>: ünvan, zəng, check-in/check-out, taksi kartı.</li><li><b>Albom</b>: hamının şəkilləri. <b>Hazırlıq</b>: çanta siyahısı.</li><li><b>Məlumat</b>: bilet saytları, internetsiz iş, təcili nömrələr, tax-free, hava limanı.</li></ul>`],
-  ["⚠️ Vacib", `<ul><li><b>20 noyabr</b>: 08:45-də oteldən çıxın → Wien Mitte → CAT avtobusu. Uçuş 12:00, <b>Terminal 1</b>.</li><li><b>Tax-free</b> çekləri: hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə möhürlət.</li><li>Təcili yardım: <b>112</b>. Otel: Weihburggasse 18-20.</li><li>Kartla ödəyəndə terminal soruşsa, <b>avro (EUR)</b> seç.</li></ul>`],
+  ["⚠️ Vacib", `<ul><li><b>20 noyabr</b>: 08:40-da oteldən taksi ilə Wien Mitte → CAT avtobusu. Uçuş 12:00, <b>Terminal 1</b>.</li><li><b>Tax-free</b> çekləri: hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə möhürlət.</li><li>Təcili yardım: <b>112</b>. Otel: Hotel Stefanie, Taborstraße 12.</li><li>Kartla ödəyəndə terminal soruşsa, <b>avro (EUR)</b> seç.</li></ul>`],
   ["🔧 Problem olsa", `<ul><li>Tətbiqi tam bağla və yenidən aç — yeni versiya özü yüklənir.</li><li>“Link işləmir” yazsa: Kənanın göndərdiyi şəxsi linki yenidən aç.</li><li>Yer görünmürsə: Ayarlar → Məxfilik → Məkan xidmətləri → Safari → “İstifadə zamanı”.</li></ul>`],
 ];
