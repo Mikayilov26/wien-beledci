@@ -155,6 +155,7 @@ Deno.serve(async (req) => {
         return json({ prices: data });
       }
 
+      case "gt": return await freeTranslate(b);
       case "ai": return await aiText(b);
       case "price.extract": return await priceExtract(b);
       case "price.search": return await priceSearch(b);
@@ -164,6 +165,27 @@ Deno.serve(async (req) => {
     return json({ error: String((e as any)?.message ?? e) }, 500);
   }
 });
+
+/* ------------------------------------------------------------------ free machine translation (no AI cost) */
+async function freeTranslate(b: any): Promise<Response> {
+  const q = String(b.q ?? "").slice(0, 1500).trim();
+  const sl = /^[a-z]{2}$|^auto$/.test(b.sl) ? b.sl : "auto", tl = /^[a-z]{2}$/.test(b.tl) ? b.tl : "de";
+  if (!q) return json({ error: "invalid" }, 400);
+  try {
+    const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(q)}`, { headers: { "user-agent": "Mozilla/5.0" } });
+    if (r.ok) {
+      const j = await r.json();
+      const text = (j?.[0] ?? []).map((x: any) => x?.[0] ?? "").join("").trim();
+      if (text) return json({ text, src: j?.[2] ?? sl, via: "google" });
+    }
+  } catch { /* fall through */ }
+  try {
+    const pair = `${sl === "auto" ? "az" : sl}|${tl}`;
+    const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}`);
+    if (r.ok) { const j = await r.json(); const text = String(j?.responseData?.translatedText ?? "").trim(); if (text && j?.responseStatus === 200) return json({ text, src: sl, via: "mymemory" }); }
+  } catch { /* */ }
+  return json({ error: "upstream" }, 502);
+}
 
 /* ------------------------------------------------------------------ limits */
 async function allow(mode: string, who: string, provider: string, isPrice = false): Promise<boolean> {

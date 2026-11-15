@@ -356,8 +356,10 @@ async function reco(kind) {
   const cand = nearest(pt, 18, ok).filter(x => x.d > 80);
   const bind = () => { $$("[data-rk]").forEach(b => b.onclick = () => reco(b.dataset.rk)); $$("#recoOut [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); }); $$("#recoOut [data-tell]").forEach(b => b.onclick = () => tellAbout(byId[b.dataset.tell])); };
   out.innerHTML = chips + `<div class="card mt"><span class="spin"></span> <span class="mute">Seçirəm…</span></div>`; bind();
-  let items = cand.slice(0, 4).map(x => ({ id: x.p.id, why: x.p.d }));
-  if (S.ai && cand.length) {
+  const score = x => { const g = x.p.g || 4.3, o = openState(x.p); return g * 2 - x.d / 600 + (o && o.open ? .6 : 0) + (STORIES[x.p.id] ? .3 : 0); };
+  const why = x => { const o = openState(x.p), bits = []; if (x.p.g >= 4.6) bits.push(`çox yüksək reytinq ★${x.p.g}`); else if (x.p.g) bits.push(`★${x.p.g}`); if (o && o.open) bits.push(o.txt.toLowerCase()); bits.push(`${walkMin(x.d)} dəq piyada`); return (x.p.d || "").split(".")[0] + ". " + bits.join(" · "); };
+  let items = cand.slice().sort((a, b) => score(b) - score(a)).slice(0, 4).map(x => ({ id: x.p.id, why: why(x) }));
+  if (false) {
     try {
       const t = await ai({ mode: "reco", tier: "fast", max_tokens: 500, prompt: `${CTX()}\nOnlar indi “${S.me ? S.me.label : "mərkəz"}” yanındadır. İstək: ${kind}.\nNamizədlər (id: ad — piyada — Google reytinqi — qiymət — açıq/bağlı):\n${cand.map(x => { const o = openState(x.p); return `${x.p.id}: ${x.p.name} — ${fmtKm(walkM(x.d))} — ${x.p.g ? "★" + x.p.g : "-"} — ${price(x.p) || "-"} — ${o ? o.txt : "-"}`; }).join("\n")}\nVaxtı və planı nəzərə alıb ən yaxşı 4-ü seç (yaxın və açıq olanlar). Yalnız JSON: {"items":[{"id":"...","why":"1 qısa cümlə"}]}` });
       const j = JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1));
@@ -382,7 +384,7 @@ function showResult(html) { goView("home"); $("#homeMain").hidden = true; const 
 function bindBack() { $$("[data-back]").forEach(b => b.onclick = closeResult); }
 function closeResult() { stopSpeak(); $("#result").hidden = true; $("#homeMain").hidden = false; }
 const AI_OFF_MSG = "Süni intellekt hələ qoşulmayıb — Kənan tezliklə qoşacaq. O vaxta qədər xəritə, tərcümə siyahısı, xərclər, konvertor, albom işləyir.";
-["camIn", "galIn", "menuIn"].forEach(id => $("#" + id).addEventListener("click", e => { if (S.ai === false) { e.preventDefault(); alertBox("🤖 Tezliklə", AI_OFF_MSG); } }));
+["menuIn"].forEach(id => $("#" + id).addEventListener("click", e => { if (S.ai === false) { e.preventDefault(); alertBox("🤖 Tezliklə", AI_OFF_MSG); } }));
 ["camIn", "galIn"].forEach(id => $("#" + id).onchange = e => identify(e.target.files[0]));
 $("#menuIn").onchange = e => menu(e.target.files[0]);
 $("#priceIn").onchange = e => priceCheck(e.target.files[0]);
@@ -403,10 +405,23 @@ function parseStory(t) {
 async function identify(file) {
   if (!file) return; clearInputs();
   showResult(`<div class="card"><span class="spin"></span> <span class="mute">Şəkil hazırlanır…</span></div>`);
-  let img; try { img = await shrink(file, 1024, .8); } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
-  const thumb = (await shrink(file, 320, .7)).url;
+  let img, thumb; try { img = await shrink(file, 1024, .8); thumb = (await shrink(file, 320, .7)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
+  // 1) free: what's around me right now (GPS)?
+  const near = S.me && S.me.src === "gps" ? nearest(S.me, 4, p => !["metro", "yemek"].includes(p.cat)).filter(x => x.d < 160) : [];
+  if (near.length) {
+    showResult(`<img class="photo" src="${img.url}" alt="" style="max-height:230px;object-fit:cover"><div class="ttl"><h2>Bu hansıdır?</h2></div>
+     <div class="card"><div class="sm dim" style="margin-bottom:6px">📍 Yaxınlıqdakı yerlər</div><ul class="list">${near.map(x => `<li data-pick="${x.p.id}" style="cursor:pointer"><span class="dot" style="background:${CAT[x.p.cat].c}"></span><div class="grow"><b>${esc(short(x.p.name))}</b><span class="s2">${fmtKm(x.d)} · ${esc((x.p.d || "").split(".")[0])}</span></div><span class="btn s pri">Bu</span></li>`).join("")}</ul>
+     <button class="btn wide mt" id="pickAi">${S.ai === false ? "Heç biri deyil" : "🔍 Heç biri — şəkildən tanı"}</button></div>`);
+    $$("[data-pick]").forEach(li => li.onclick = () => { const p = byId[li.dataset.pick]; addStamp({ thumb, name: p.name, poi: p }); tellAbout(p, img.url); });
+    $("#pickAi").onclick = () => S.ai === false ? alertBox("🤖 Tezliklə", AI_OFF_MSG) : identifyAI(img, thumb);
+    return;
+  }
+  if (S.ai === false) { showResult(`<img class="photo" src="${img.url}" alt=""><div class="card mt">Yaxınlıqda tanınmış yer tapmadım (GPS). Xəritədən yeri seçib “🔊 Hekayə”yə bas.</div>`); return; }
+  identifyAI(img, thumb);
+}
+async function identifyAI(img, thumb) {
   cur = { img: img.url, thumb, name: "", story: "", facts: [], tip: "", poi: null, history: [], loading: true };
-  renderStory();
+  showResult(""); renderStory();
   const near = (S.me ? nearest(S.me, 30, p => p.cat !== "metro").map(x => x.p) : POI.filter(p => p.cat !== "metro"));
   try {
     let lastDraw = 0;
@@ -414,22 +429,26 @@ async function identify(file) {
       prompt: `${CTX()}\n${S.me ? `Onların GPS yeri: ${S.me.lat.toFixed(5)}, ${S.me.lng.toFixed(5)} (${S.me.label} yaxınlığı).` : ""}\nŞəkildəki obyekti (bina, abidə, heykəl, meydan, küçə) tanı və bələdçi kimi danış.\nUyğun gəlirsə bu siyahıdan id seç:\n${near.map(p => p.id + ": " + p.name).join("\n")}\n\nDƏQİQ BU FORMATDA YAZ:\nID: <id və ya yox>\nAD: <ad (yerli adı)>\nƏMİNLİK: <yüksək|orta|aşağı>\n---\n<130–180 sözlük canlı hekayə: kim, nə vaxt tikib, maraqlı əhvalat, nəyə baxmalı. Dəqiq bilmədiyin rəqəmi yazma.>\nFAKTLAR:\n- <fakt>\n- <fakt>\n- <fakt>\nMƏSLƏHƏT: <1 cümlə>`,
       onText: txt => { const o = parseStory(txt); Object.assign(cur, { name: o.name || cur.name, story: o.story, poi: byId[o.id] || cur.poi }); if (Date.now() - lastDraw > 120) { lastDraw = Date.now(); renderStory(true); } } });
     const o = parseStory(t);
-    Object.assign(cur, { name: o.name || "Naməlum yer", story: o.story, facts: o.facts, tip: o.tip, conf: o.conf, poi: byId[o.id] || null, loading: false });
+    const poi = byId[o.id] || null;
+    if (poi && STORIES[poi.id]) { addStamp({ thumb, name: poi.name, poi }); return tellAbout(poi, img.url); } // known place → use free, verified story
+    Object.assign(cur, { name: o.name || "Naməlum yer", story: o.story, facts: o.facts, tip: o.tip, conf: o.conf, poi, loading: false });
     if (cur.poi) LS.set("st." + cur.poi.id, { s: cur.story, f: cur.facts, t: cur.tip });
     addStamp(cur);
   } catch (e) { cur.loading = false; cur.err = aiErr(e); }
   renderStory();
 }
-async function tellAbout(p) {
-  const c = LS.get("st." + p.id, null);
-  cur = { img: null, thumb: null, name: p.name, poi: p, story: c ? c.s : p.d, facts: c ? c.f : [], tip: c ? c.t : "", history: [], loading: !c };
+async function tellAbout(p, imgUrl) {
+  const st = STORIES[p.id], c = st ? { s: st.s, f: st.f, t: st.t } : LS.get("st." + p.id, null);
+  cur = { img: imgUrl || null, thumb: null, name: p.name, poi: p, story: c ? c.s : p.d, facts: c ? c.f : [], tip: c ? c.t : "", history: [], loading: false, short: !c };
   showResult(""); renderStory();
-  if (c) return;
+}
+async function moreStory(p) {
+  cur.loading = true; renderStory();
   try {
     let lastDraw = 0;
-    const t = await ai({ mode: "story", tier: "fast", max_tokens: 800, prompt: `${CTX()}\nOnlar “${p.name}” yanındadır (${p.d}).\nDƏQİQ BU FORMATDA YAZ:\n---\n<130–180 sözlük canlı bələdçi hekayəsi>\nFAKTLAR:\n- <fakt>\n- <fakt>\n- <fakt>\nMƏSLƏHƏT: <1 cümlə>`,
+    const t = await ai({ mode: "story", tier: "fast", max_tokens: 800, prompt: `${CTX()}\nOnlar “${p.name}” yanındadır (${p.d}).\nDƏQİQ BU FORMATDA YAZ:\n---\n<130–180 sözlük canlı bələdçi hekayəsi. Dəqiq bilmədiyin rəqəmi yazma.>\nFAKTLAR:\n- <fakt>\n- <fakt>\n- <fakt>\nMƏSLƏHƏT: <1 cümlə>`,
       onText: txt => { const o = parseStory(txt); if (o.story && cur.poi === p) { cur.story = o.story; if (Date.now() - lastDraw > 120) { lastDraw = Date.now(); renderStory(true); } } } });
-    const o = parseStory(t); if (cur.poi === p) { Object.assign(cur, { story: o.story || p.d, facts: o.facts, tip: o.tip }); LS.set("st." + p.id, { s: cur.story, f: cur.facts, t: cur.tip }); }
+    const o = parseStory(t); if (cur.poi === p) { Object.assign(cur, { story: o.story || p.d, facts: o.facts, tip: o.tip, short: false }); LS.set("st." + p.id, { s: cur.story, f: cur.facts, t: cur.tip }); }
   } catch (e) { if (cur.poi === p) cur.err = aiErr(e); }
   if (cur.poi === p) { cur.loading = false; renderStory(); }
 }
@@ -440,11 +459,13 @@ function renderStory(fast) {
   <div class="ttl"><div class="grow"><h2 id="stTitle">${esc(c.name || "Tanıyıram…")}</h2>${p ? `<div>${rating(p)} ${pills(p)}</div>${price(p) ? `<div class="sm mute" style="margin-top:4px">💶 ${esc(price(p))}</div>` : ""}` : ""}${c.conf && !/yüksək/i.test(c.conf) ? `<div class="sm dim">Əminlik: ${esc(c.conf)}</div>` : ""}</div><button class="btn s" id="spk">🔊 Dinlə</button></div>
   <div class="card"><div class="story" id="stBox">${esc(c.story || "")}${c.loading && !c.story ? '<span class="spin"></span>' : ""}</div>
   ${c.facts && c.facts.length ? `<ul class="facts">${c.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${c.tip ? `<div class="note">💡 ${esc(c.tip)}</div>` : ""}${c.err ? `<div class="note" style="color:#B23A2B">⚠️ ${esc(c.err)}</div>` : ""}</div>
+  ${c.short && p && !c.loading ? `<button class="btn wide mt" id="moreSt">📖 Ətraflı hekayə${S.ai === false ? "" : " (AI)"}</button>` : ""}
   <div class="hscroll mt"><button class="chip" data-q="Daha ətraflı danış, maraqlı əhvalatlar əlavə et.">📖 Daha çox</button><button class="chip" data-q="İçəri girmək olar? Bilet və saatlar? Dəqiq bilmirsənsə rəsmi saytı yoxlamağı de.">🎟 Bilet</button><button class="chip" data-q="Ən gözəl foto bucağı haradadır?">📸 Foto</button></div>
   <div id="chat">${c.history.map(m => `<div class="msg ${m.role === "user" ? "me" : "ai"}">${esc(m.content)}</div>`).join("")}</div>
   <form class="ask" id="askF"><input class="inp" id="askI" placeholder="Sual ver…" autocomplete="off"><button class="btn pri">→</button></form>
   <div class="row mt">${p && TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}${p ? `<button class="btn" id="goP">🧭 Get</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}<button class="btn" id="nextP">✨ Buradan hara?</button></div>`;
   bindBack();
+  if ($("#moreSt")) $("#moreSt").onclick = () => S.ai === false ? alertBox("🤖 Tezliklə", AI_OFF_MSG) : moreStory(p);
   $("#spk").onclick = () => speaking ? stopSpeak() : speak((c.name || "") + ". " + (c.story || "") + " " + (c.facts || []).join(". "));
   $$("#result [data-q]").forEach(b => b.onclick = () => ask(b.dataset.q));
   $("#askF").onsubmit = e => { e.preventDefault(); const v = $("#askI").value.trim(); if (v) { $("#askI").value = ""; ask(v); } };
@@ -610,9 +631,22 @@ function showBig(de, az) {
 }
 $("#bigModal").addEventListener("click", e => { if (e.target.id === "bigModal") $("#bigModal").classList.remove("on"); });
 let trT = 0; $("#trIn").addEventListener("input", () => { clearTimeout(trT); trT = setTimeout(renderPhr, 120); });
+// rough German → Azerbaijani-letter pronunciation (offline, free)
+function deSay(t) {
+  let s = " " + t.toLowerCase() + " ";
+  const R = [[/tsch/g, "ç"], [/sch/g, "ş"], [/(^|\s)st/g, "$1şt"], [/(^|\s)sp/g, "$1şp"], [/ch/g, "x"], [/ck/g, "k"], [/ei/g, "ay"], [/ie/g, "i"], [/eu|äu/g, "oy"], [/au/g, "au"], [/ä/g, "e"], [/ß/g, "s"], [/tz/g, "ts"], [/z/g, "ts"], [/qu/g, "kv"], [/v/g, "f"], [/w/g, "v"], [/j/g, "y"], [/ph/g, "f"], [/([aeiouöü])h/g, "$1"], [/(^|\s|[aeiouöü])s([aeiouöü])/g, "$1z$2"], [/er\b/g, "ər"]];
+  R.forEach(([a, b]) => s = s.replace(a, b));
+  return s.trim();
+}
+async function freeTr(q, sl, tl) { const j = await api("gt", { q, sl, tl }); if (!j || !j.text) throw { code: "upstream" }; return j.text; }
 $("#trF").onsubmit = async e => {
   e.preventDefault(); const q = $("#trIn").value.trim(); if (!q) return; $("#trIn").blur();
   const out = $("#trOut"); out.innerHTML = `<div class="card mt"><span class="spin"></span></div>`;
+  try {
+    const de = await freeTr(q, "auto", "de"); let mn = ""; try { mn = await freeTr(de, "de", "az"); } catch (x) {}
+    out.innerHTML = `<div class="card mt"><div class="de" id="trDe">${esc(de)}</div><div class="mute sm" style="margin-top:4px">🗣 ${esc(deSay(de))}</div>${mn ? `<div class="dim sm">↩︎ ${esc(mn)}</div>` : ""}<div class="row mt"><button class="btn s pri" id="trS">🔊 Səsləndir</button><button class="btn s" id="trB">⛶ Böyük göstər</button></div></div>`;
+    $("#trS").onclick = () => speak(de, "de"); $("#trB").onclick = $("#trDe").onclick = () => showBig(de, q); speak(de, "de"); return;
+  } catch (e0) { if (S.ai === false) { out.innerHTML = `<div class="card mt">${esc(aiErr(e0))}</div>`; return; } }
   try {
     const t = await ai({ mode: "tr", tier: "fast", max_tokens: 300, prompt: `Bu mətni Vyanada danışılan təbii almancaya (nəzakətli Sie) tərcümə et. Mətn azərbaycan, türk, rus və ya ingilis dilində və səhv yazılmış ola bilər.\nMətn: """${q}"""\nDƏQİQ FORMAT:\nDE: <almanca>\nOXU: <Azərbaycan hərfləri ilə oxunuş>\nMƏNA: <qısa geri tərcümə az>`,
       onText: x => { const d = (x.match(/DE:\s*([^\n]*)/) || [])[1]; if (d) out.innerHTML = `<div class="card mt"><div class="de">${esc(d)}</div></div>`; } });
@@ -629,6 +663,11 @@ $("#lsIn").addEventListener("input", () => { clearTimeout(lsTimer); lsTimer = se
 async function listenTr() {
   const src = $("#lsIn").value.trim(); if (!src || src === lsLast) return; lsLast = src;
   const out = $("#lsOut"); out.hidden = false; const my = ++lsSeq;
+  try {
+    const t = await freeTr(src, "de", lsTarget === "tr" ? "tr" : "az");
+    if (my === lsSeq) { out.innerHTML = `<div class="story">${esc(t)}</div><button class="btn s mt" id="lsSay">🔊 Dinlə</button>`; $("#lsSay").onclick = () => speak(t, lsTarget === "tr" ? "tr" : "az"); }
+    return;
+  } catch (e0) { if (S.ai === false) { if (my === lsSeq) out.textContent = aiErr(e0); return; } }
   try {
     const t = await ai({ mode: "listen", tier: "fast", max_tokens: 400, prompt: `Bu, Vyanada kiminsə dediyi sözlərdir (almanca, Avstriya dialekti, danışıq tanıma səhvləri ola bilər). Təbii ${lsTarget === "tr" ? "türk" : "Azərbaycan"} dilinə tərcümə et. Yalnız tərcüməni yaz.\nMətn: """${src}"""`,
       onText: x => { if (my === lsSeq) out.innerHTML = `<div class="story">${esc(x)}</div>`; } });
