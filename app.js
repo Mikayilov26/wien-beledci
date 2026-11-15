@@ -28,7 +28,7 @@ const DEFAULT_LIVE = { eurAzn: 1.96, eurTry: 55.2, weather: [], alerts: [] };
 const S = {
   code: null, me: null, gps: "wait", hotel: LS.get("hotel", null), album: LS.get("album", []),
   live: LS.get("live", DEFAULT_LIVE), expenses: LS.get("expCache", []), pending: LS.get("expPending", []),
-  ai: true, online: true, dest: null, filter: "all",
+  ai: true, online: true, dest: null, filter: "all", friends: {}, share: LS.get("shareLoc", false), photos: LS.get("photosCache", []),
 };
 let ME = LS.get("who", null);
 const R = () => ({ azn: +S.live.eurAzn || 1.96, try: +S.live.eurTry || 55 });
@@ -68,7 +68,30 @@ function setMe(lat, lng, src, acc) {
   const n = nearest({ lat, lng }, 1)[0];
   S.me = { lat, lng, src, acc: acc || 0, ts: Date.now(), label: n && n.d < 400 ? short(n.p.name) : "Vyana" };
   if (src === "gps") S.gps = "on";
-  renderLoc(); mapMe(); return true;
+  renderLoc(); mapMe(); if (src === "gps") pushLoc(); return true;
+}
+/* ---------- group location (opt-in) ---------- */
+let lastPush = 0;
+async function pushLoc(force) {
+  if (!S.share || !ME || !S.me || S.me.src !== "gps" || !S.code) return;
+  if (!force && Date.now() - lastPush < 45000) return; lastPush = Date.now();
+  try { await api("kv.set", { key: "loc:" + ME, value: { lat: +S.me.lat.toFixed(5), lng: +S.me.lng.toFixed(5), acc: Math.round(S.me.acc || 0) } }); } catch (e) {}
+}
+function friendsList() { return Object.entries(S.friends).filter(([n, v]) => n !== ME && v && Date.now() - v.ts < 3 * 3600000).map(([n, v]) => ({ n, ...v })); }
+const ago = ts => { const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? "indicə" : m < 60 ? m + " dəq əvvəl" : Math.floor(m / 60) + " saat əvvəl"; };
+function groupSheet() {
+  const fr = friendsList();
+  $("#sheetBody").innerHTML = `<h3 style="font-size:21px;margin-right:36px">👭 Qrup</h3>
+   <p class="mute sm">Yerini paylaşsan, qızlar səni xəritədə görəcək (hər 45 saniyədən bir yenilənir). İstədiyin vaxt söndür.</p>
+   ${ME ? `<button class="btn wide ${S.share ? "" : "pri"}" id="shTg">${S.share ? "⏸ Paylaşmanı dayandır" : "📍 Yerimi qrupla paylaş"}</button>` : `<button class="btn pri wide" id="shWho">Əvvəl adını seç</button>`}
+   <ul class="list mt">${fr.length ? fr.map(f => `<li data-fr="${esc(f.n)}" style="cursor:pointer"><span class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</span><div class="grow"></div><span class="sm dim">${S.me ? fmtKm(walkM(dist(S.me, f))) + " · " : ""}${ago(f.ts)}</span></li>`).join("") : `<li class="mute sm">Hələ heç kim yerini paylaşmır.</li>`}</ul>`;
+  $("#sheet").classList.add("on");
+  if ($("#shWho")) $("#shWho").onclick = askWho;
+  if ($("#shTg")) $("#shTg").onclick = async () => { S.share = !S.share; LS.set("shareLoc", S.share); $("#grpBtn").classList.toggle("on", S.share);
+    if (S.share) { if (!S.me || S.me.src !== "gps") toast("GPS yeri tapılan kimi paylaşılacaq"); await pushLoc(true); toast("📍 Yerin qrupla paylaşılır"); }
+    else { try { await api("kv.set", { key: "loc:" + ME, value: null }); } catch (e) {} toast("Paylaşma dayandı"); }
+    groupSheet(); };
+  $$("[data-fr]").forEach(li => li.onclick = () => { const f = S.friends[li.dataset.fr]; if (f) routeTo({ id: "fr", name: li.dataset.fr, lat: f.lat, lng: f.lng, cat: "tarix", d: "" }); });
 }
 function renderLoc() {
   const c = $("#locChip"), t = $("#locTxt");
@@ -139,6 +162,7 @@ async function sync() {
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
     if (j.kv && j.kv.hotel) { S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); mapHotel(); }
+    S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
     await flushPending();
   } catch (e) { S.online = false; if (e.code === "forbidden") return gate("Kod səhvdir. Linki yenidən aç."); }
   finally { syncing = false; }
@@ -362,47 +386,102 @@ async function menu(file) {
   catch (e) { $("#mBox").textContent = aiErr(e); }
 }
 
-/* ---------- price check (live web search) ---------- */
+/* ---------- price check: 1) read label  2) search Baku + Turkey ---------- */
+let prCur = null;
 async function priceCheck(file) {
   if (!file) return; clearInputs();
   showResult(`<div class="card"><span class="spin"></span> Şəkil hazırlanır…</div>`);
-  const img = await shrink(file, 1280, .82);
-  showResult(`<img class="photo" src="${img.url}" alt=""><div class="ttl"><h2 id="prT">Qiymət axtarılır…</h2></div><div class="card" id="prB"><span class="spin"></span> <span class="mute">Etiketi oxuyuram və Bakı, Türkiyə saytlarında axtarıram… (15–40 san.)</span></div>`);
+  let img, th; try { img = await shrink(file, 1280, .82); th = (await shrink(file, 200, .6)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
+  prCur = { img: img.url, thumb: th, p: {} };
+  showResult(`<img class="photo" src="${img.url}" alt="" style="max-height:170px;object-fit:cover"><div class="ttl"><h2 id="prT">Etiketi oxuyuram…</h2></div><div class="card" id="prB"><span class="spin"></span> <span class="mute">Marka və artikul tapılır…</span></div>`);
+  let err = "";
+  try { const j = await api("price.extract", { image: img.b64, who: ME || "" }); prCur.p = j.product || {}; }
+  catch (e) { err = aiErr(e); }
+  priceForm(err);
+}
+function priceManual() { prCur = { img: null, thumb: null, p: {} }; showResult(`<div class="ttl"><h2 id="prT">Qiyməti yoxla</h2></div><div class="card" id="prB"></div>`); priceForm(""); }
+function priceForm(err) {
+  const p = prCur.p, got = p.brand || p.model || p.code;
+  $("#prT").textContent = got ? "Düzdürmü? Yoxla və axtar" : "Məhsulu yaz";
+  $("#prB").innerHTML = `${err ? `<div class="note" style="color:#B23A2B;margin-top:0">⚠️ ${esc(err)}</div>` : ""}
+   ${!got && prCur.img && !err ? `<div class="note" style="margin-top:0">Etiketi oxuya bilmədim — markanı və adı özün yaz. Artikul kodu (məs. 1234/567) olsa nəticə daha dəqiq olur.</div>` : ""}
+   <label class="fld">Marka<input class="inp" id="pfB" value="${esc(p.brand || "")}" placeholder="Zara, Nike, Sephora…" autocapitalize="words"></label>
+   <label class="fld">Məhsul / model<input class="inp" id="pfM" value="${esc(p.model || p.name_az || "")}" placeholder="Air Max 90, palto, ətir 50 ml…"></label>
+   <div class="row"><label class="fld grow">Artikul / kod<input class="inp" id="pfC" value="${esc(p.code || p.ean || "")}" placeholder="istəyə bağlı"></label><label class="fld" style="width:34%">Vyana €<input class="inp" id="pfE" inputmode="decimal" value="${p.vienna_eur ? String(p.vienna_eur).replace(".", ",") : ""}" placeholder="0"></label></div>
+   <button class="btn pri wide mt" id="pfGo">🔎 Bakı və Türkiyədə axtar</button>
+   <div class="sm dim" style="margin-top:8px;text-align:center">Rəsmi saytlarda və mağazalarda canlı axtarılır · 15–40 san.</div>`;
+  $("#pfGo").onclick = () => priceSearch(false);
+}
+async function priceSearch(fresh) {
+  const v = id => ($(id) ? $(id).value.trim() : "");
+  if ($("#pfB")) Object.assign(prCur.p, { brand: v("#pfB"), model: v("#pfM"), code: v("#pfC"), vienna_eur: toNum(v("#pfE")) || null });
+  const p = prCur.p;
+  if (!p.brand && !p.model && !p.code) { toast("Ən azı markanı və ya adı yaz"); return; }
+  $("#prT").textContent = [p.brand, p.model].filter(Boolean).join(" · ") || "Məhsul";
+  $("#prB").innerHTML = `<span class="spin"></span> <span class="mute">Bakı və Türkiyə saytlarında axtarıram…</span>`;
   try {
-    const j = await ai({ mode: "price", tier: "search", search: true, max_searches: 5, image: img.b64, max_tokens: 1200,
-      prompt: `Şəkildə Vyanadakı mağazada məhsul və ya qiymət etiketi var.
-1) Etiketdən markanı, məhsulun adını, artikul kodunu (məs. Zara 1234/567/800) və avro qiymətini oxu.
-2) Eyni məhsulun HAZIRKI qiymətini internetdə axtar: Azərbaycan (məs. zara.com/az, markanın rəsmi AZ saytı, umico.az, mağaza saytları) və Türkiyə (məs. zara.com/tr, markanın rəsmi TR saytı, trendyol.com). Artikul kodu ilə axtar. Yalnız axtarışda TAPDIĞIN qiymətləri yaz, təxmin etmə. Tapmasan null yaz.
-Sonda YALNIZ bu JSON-u yaz:
-{"brand":"","name":"<qısa ad, az dilində>","code":"","vienna_eur":<rəqəm və ya null>,"baku":{"price":<AZN rəqəm və ya null>,"url":"<mənbə>"},"turkey":{"price":<TRY rəqəm və ya null>,"url":"<mənbə>"},"note":"<1 qısa cümlə az dilində>"}` });
-    const t = j.text || ""; let o = {};
-    try { o = JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)); } catch (e) {}
-    renderPrice(o, j.sources || []);
-  } catch (e) { $("#prT").textContent = "Qiymət"; $("#prB").innerHTML = esc(aiErr(e)); }
+    const j = await api("price.search", { product: p, who: ME || "", thumb: prCur.thumb, fresh: !!fresh });
+    renderPrice(p, j.result || {}, j.cached);
+  } catch (e) {
+    $("#prB").innerHTML = `<div class="note" style="color:#B23A2B;margin-top:0">⚠️ ${esc(aiErr(e))}</div>${priceLinks(p)}<button class="btn wide mt" id="pfBack">✏️ Düzəlt</button>`;
+    $("#pfBack").onclick = () => priceForm("");
+  }
 }
-function renderPrice(o, sources) {
-  const r = R(); const v = +o.vienna_eur || null, b = o.baku && +o.baku.price || null, t = o.turkey && +o.turkey.price || null;
-  const va = v ? v * r.azn : null, ta = t ? t / r.try * r.azn : null;
-  const opts = [["vie", va], ["bak", b], ["tr", ta]].filter(x => x[1]); const best = opts.length > 1 ? opts.reduce((a, c) => a[1] <= c[1] ? a : c)[0] : null;
-  const name = [o.brand, o.name].filter(Boolean).join(" · ") || "Məhsul";
-  const q = ((o.brand || "") + " " + (o.code || o.name || "")).trim();
-  $("#prT").textContent = name;
-  const L = [];
-  if (/zara/i.test(o.brand || "")) { L.push([`https://www.zara.com/az/en/search?searchTerm=${encodeURIComponent(o.code || o.name || "")}`, "Zara AZ"]); L.push([`https://www.zara.com/tr/tr/search?searchTerm=${encodeURIComponent(o.code || o.name || "")}`, "Zara TR"]); }
-  L.push([`https://www.google.com/search?q=${encodeURIComponent(q + " qiymət Bakı")}`, "Google AZ"]); L.push([`https://www.trendyol.com/sr?q=${encodeURIComponent(q)}`, "Trendyol"]);
-  $("#prB").innerHTML = `${o.code ? `<div class="sm dim">Artikul: ${esc(o.code)}</div>` : ""}
+const toAzn = (o, r) => o.currency === "TRY" ? o.price / r.try * r.azn : o.currency === "EUR" ? o.price * r.azn : o.price;
+const bestOf = arr => { const ex = (arr || []).filter(o => o.match === "exact"); const pool = ex.length ? ex : (arr || []); return pool.length ? pool.reduce((a, c) => a.price <= c.price ? a : c) : null; };
+function priceLinks(p) {
+  const q = [p.brand, p.code || p.model].filter(Boolean).join(" ");
+  const L = [[`https://www.google.com/search?q=${encodeURIComponent(q + " qiymət Bakı")}`, "Google AZ"], [`https://www.google.com/search?q=${encodeURIComponent(q + " fiyat")}`, "Google TR"], [`https://www.trendyol.com/sr?q=${encodeURIComponent(q)}`, "Trendyol"], [`https://umico.az/search?query=${encodeURIComponent(q)}`, "Umico"]];
+  return `<div class="row mt" style="flex-wrap:wrap">${L.map(l => `<a class="btn s" href="${l[0]}" target="_blank" rel="noopener">${l[1]}</a>`).join("")}</div>`;
+}
+function offerList(arr, flag, r) {
+  if (!arr || !arr.length) return "";
+  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}${o.url ? `<br><a class="sm" href="${esc(o.url)}" target="_blank" rel="noopener">bax ›</a>` : ""}</div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
+}
+function renderPrice(p, res, cached) {
+  const r = R(), v = +p.vienna_eur || null, va = v ? v * r.azn : null;
+  const bb = bestOf(res.baku), bt = bestOf(res.turkey);
+  const ba = bb ? toAzn(bb, r) : null, ta = bt ? toAzn(bt, r) : null;
+  const opts = [["vie", va], ["bak", ba], ["tr", ta]].filter(x => x[1]);
+  const best = opts.length > 1 ? opts.reduce((a, c) => a[1] <= c[1] ? a : c)[0] : null;
+  const name = [p.brand, p.model || p.name_az].filter(Boolean).join(" · ") || "Məhsul";
+  if ($("#prT")) $("#prT").textContent = name;
+  let save = "";
+  if (best === "vie" && opts.length > 1) { const nx = Math.min(...opts.filter(o => o[0] !== "vie").map(o => o[1])); save = `Vyanada almaq ${fm(nx - va)} ₼ sərfəlidir`; }
+  else if (best && va) save = `Burada alma — ${{ bak: "Bakıda", tr: "Türkiyədə" }[best]} ${fm(va - Math.min(ba || 1e9, ta || 1e9))} ₼ ucuzdur`;
+  const none = !bb && !bt;
+  $("#prB").innerHTML = `${p.code ? `<div class="sm dim">Artikul: ${esc(p.code)}</div>` : ""}
    <div class="pbox">
-    <div class="${best === "vie" ? "best" : ""}"><span>🇦🇹 Vyana</span><b>${v ? fm(v) + " €" : "—"}</b><span>${va ? "≈ " + fm(va) + " ₼" : "oxunmadı"}</span></div>
-    <div class="${best === "bak" ? "best" : ""}"><span>🇦🇿 Bakı</span><b>${b ? fm(b, 0) + " ₼" : "—"}</b>${b && o.baku.url ? `<a href="${esc(o.baku.url)}" target="_blank" rel="noopener">mənbə ›</a>` : "<span>tapılmadı</span>"}</div>
-    <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${t ? fm(t, 0) + " ₺" : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : "tapılmadı"}</span>${t && o.turkey.url ? `<a href="${esc(o.turkey.url)}" target="_blank" rel="noopener">mənbə ›</a>` : ""}</div>
+    <div class="${best === "vie" ? "best" : ""}"><span>🇦🇹 Vyana</span><b>${v ? fm(v) + " €" : "—"}</b><span>${va ? "≈ " + fm(va) + " ₼" : "yazılmayıb"}</span></div>
+    <div class="${best === "bak" ? "best" : ""}"><span>🇦🇿 Bakı</span><b>${bb ? fm(bb.price, 0) + " ₼" : "—"}</b><span>${bb ? (bb.match === "similar" ? "oxşar məhsul" : esc(bb.store)) : "tapılmadı"}</span></div>
+    <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${bt ? fm(bt.price, 0) + " ₺" : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : "tapılmadı"}</span></div>
    </div>
-   ${best ? `<div class="settle mt">💡 Ən ucuz: <b>${{ vie: "Vyana", bak: "Bakı", tr: "Türkiyə" }[best]}</b></div>` : ""}
-   ${o.note ? `<div class="note">${esc(o.note)}</div>` : ""}
-   <div class="note">Qiymətlər internetdən canlı axtarılıb. Endirim və ölçüyə görə fərqlənə bilər.</div>
-   <div class="row mt">${L.map(l => `<a class="btn s" href="${l[0]}" target="_blank" rel="noopener">${l[1]}</a>`).join("")}</div>
+   ${save ? `<div class="settle mt">💡 <b>${esc(save)}</b></div>` : ""}
+   ${none ? `<div class="note">Bu məhsulun Bakı və Türkiyə qiyməti internetdə tapılmadı. Artikul kodunu yazıb yenidən yoxla və ya aşağıdakı linklərə bax.</div>` : ""}
+   ${offerList(res.baku, "🇦🇿 Bakı mağazaları", r)}${offerList(res.turkey, "🇹🇷 Türkiyə mağazaları", r)}
+   ${res.note ? `<div class="note">${esc(res.note)}</div>` : ""}
+   <div class="note">“eyni” — eyni artikul, “oxşar” — yaxın model. Qiymətlər ${cached ? "son 12 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
+   ${priceLinks(p)}
+   <div class="row mt"><button class="btn grow" id="prEdit">✏️ Düzəlt</button><button class="btn grow" id="prFresh">🔄 Təzədən</button></div>
    ${v ? `<button class="btn pri wide mt" id="prAdd">💶 Aldım — xərclərə yaz</button>` : ""}`;
-  if ($("#prAdd")) $("#prAdd").onclick = () => { goView("exp"); setTimeout(() => { $("#expA").value = String(v).replace(".", ","); setExpCur("EUR"); $("#expD").value = name; $("#expA").dispatchEvent(new Event("input")); }, 60); };
+  $("#prEdit").onclick = () => { prCur = prCur || { p }; priceForm(""); };
+  $("#prFresh").onclick = () => { prCur = prCur || { p, thumb: null }; prCur.p = p; priceSearch(true); };
+  if ($("#prAdd")) $("#prAdd").onclick = () => { goView("exp"); setTimeout(() => { $("#expA").value = String(v).replace(".", ","); setExpCur("EUR"); $("#expD").value = name.slice(0, 80); $("#expA").dispatchEvent(new Event("input")); }, 60); };
 }
+async function priceHistory() {
+  showResult(`<div class="ttl"><h2>🧾 Baxılan qiymətlər</h2></div><div class="card" id="phB"><span class="spin"></span></div>`);
+  let list = [];
+  try { list = (await api("prices")).prices || []; } catch (e) { $("#phB").textContent = aiErr(e); return; }
+  if (!list.length) { $("#phB").innerHTML = `<div class="mute" style="text-align:center;padding:16px">Hələ heç nə yoxlanmayıb.<br>“🛍 Qiymət” ilə başla.</div>`; return; }
+  const r = R(), seen = new Set();
+  list = list.filter(x => { const k = (x.brand + "|" + (x.code || x.name)).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  $("#phB").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hər üç telefonda görünür</div><ul class="list">${list.map((x, i) => { const bb = bestOf(x.result && x.result.baku), bt = bestOf(x.result && x.result.turkey);
+    return `<li class="hist" data-h="${i}">${x.thumb ? `<img src="${x.thumb}" alt="">` : `<img alt="">`}<div class="grow"><b>${esc([x.brand, x.name].filter(Boolean).join(" · ") || "Məhsul")}</b><span class="s2">${x.vienna_eur ? "🇦🇹 " + fm(+x.vienna_eur) + " € · " : ""}${bb ? "🇦🇿 " + fm(bb.price, 0) + " ₼ · " : ""}${bt ? "🇹🇷 ≈" + fm(toAzn(bt, r), 0) + " ₼" : ""}</span><span class="s2 dim">${esc(x.who || "")} · ${fmtT(x.ts)}</span></div></li>`; }).join("")}</ul>`;
+  $$("[data-h]").forEach(li => li.onclick = () => { const x = list[+li.dataset.h]; const p = { brand: x.brand, model: x.name, code: x.code, vienna_eur: x.vienna_eur };
+    prCur = { img: null, thumb: x.thumb, p }; showResult(`${x.thumb ? `<img class="photo" src="${x.thumb}" alt="" style="max-height:200px;object-fit:contain">` : ""}<div class="ttl"><h2 id="prT"></h2></div><div class="card" id="prB"></div>`); renderPrice(p, x.result || {}, true); });
+}
+$("#prManual").onclick = priceManual;
+$("#prHist").onclick = priceHistory;
 
 /* ---------- speech ---------- */
 let speaking = false;
@@ -544,14 +623,14 @@ function renderExpData() {
 }
 
 /* ---------- map (Leaflet) ---------- */
-let map = null, poiLayer = null, meLayer = null, routeLayer = null, alertLayer = null, hotelLayer = null;
+let map = null, poiLayer = null, meLayer = null, routeLayer = null, alertLayer = null, hotelLayer = null, frLayer = null;
 const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn"]);
 function initMap() {
   if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd", attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>' }).addTo(map);
-  poiLayer = L.layerGroup().addTo(map); alertLayer = L.layerGroup().addTo(map); hotelLayer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
-  drawPOI(); mapAlerts(); mapHotel(); mapMe();
+  poiLayer = L.layerGroup().addTo(map); alertLayer = L.layerGroup().addTo(map); hotelLayer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map); frLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
+  drawPOI(); mapAlerts(); mapHotel(); mapFriends(); mapMe();
   map.on("zoomend", drawPOI);
 }
 function drawPOI() {
@@ -570,9 +649,12 @@ function mapMe() { if (!map || !meLayer) return; meLayer.clearLayers(); if (!S.m
   L.marker([S.me.lat, S.me.lng], { icon: L.divIcon({ className: "", html: '<div class="medot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false }).addTo(meLayer); }
 function mapAlerts() { if (!map || !alertLayer) return; alertLayer.clearLayers(); todaysAlerts().filter(a => a.lat && a.level !== "info").forEach(a => L.circle([a.lat, a.lng], { radius: a.r || 300, color: "#C8102E", weight: 2, dashArray: "6 4", fillOpacity: .12 }).bindTooltip("⚠ " + a.title).addTo(alertLayer)); }
 function mapHotel() { if (!map || !hotelLayer) return; hotelLayer.clearLayers(); if (S.hotel) L.marker([S.hotel.lat, S.hotel.lng], { icon: L.divIcon({ className: "", html: '<div style="font-size:26px">🏨</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).on("click", () => routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "Otelimiz" })).addTo(hotelLayer); }
+function mapFriends() { if (!map || !frLayer) return; frLayer.clearLayers(); friendsList().forEach(f => L.marker([f.lat, f.lng], { icon: L.divIcon({ className: "", html: `<div class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</div>`, iconSize: null, iconAnchor: [12, 12] }) }).on("click", () => groupSheet()).addTo(frLayer)); }
 const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["metro", "Ⓜ Metro"]];
 $("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("");
 $$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$("#filters .chip").forEach(x => x.classList.toggle("on", x === b)); drawPOI(); });
+$("#grpBtn").classList.toggle("on", !!S.share);
+$("#grpBtn").onclick = groupSheet;
 $("#meBtn").onclick = () => { if (S.me && map) map.setView([S.me.lat, S.me.lng], 16); else $("#locChip").click(); };
 $("#sheetX").onclick = () => $("#sheet").classList.remove("on");
 function openPoi(p) {
@@ -633,17 +715,37 @@ function renderMore() {
   if (moreTab === "alb") renderAlbum(B);
   if (moreTab === "hotel") {
     B.innerHTML = `<div class="card"><h3>🏨 Otelimiz</h3>${S.hotel ? `<p class="mute">${esc(S.hotel.name || "Otel")} — hamıda görünür.</p><button class="btn pri wide" id="hGo">🧭 Otelə qayıt</button>` : `<p class="mute">Oteldə olanda aşağıdakı düyməni bas — yer hamı üçün yadda qalacaq.</p>`}
+     ${S.hotel ? `<button class="btn wide mt" id="hTaxi">🚕 Taksiyə göstər</button>` : ""}
      <input class="inp mt" id="hName" placeholder="Otelin adı" value="${esc(S.hotel && S.hotel.name || "")}">
+     <input class="inp mt" id="hAddr" placeholder="Ünvan (məs. Kärntner Str. 1, 1010 Wien)" value="${esc(S.hotel && S.hotel.addr || "")}">
      <button class="btn wide mt" id="hSet" ${S.me ? "" : "disabled"}>📍 İndi oteldəyəm — yadda saxla</button>${S.me ? "" : `<div class="note">GPS yeri hələ tapılmayıb.</div>`}</div>`;
+    if ($("#hTaxi")) $("#hTaxi").onclick = taxiCard;
     if ($("#hGo")) $("#hGo").onclick = () => { goView("map"); routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
-    $("#hSet").onclick = async () => { const v = { lat: S.me.lat, lng: S.me.lng, name: $("#hName").value.trim() || "Otel" }; S.hotel = v; LS.set("hotel", v); mapHotel(); try { await api("kv.set", { key: "hotel", value: v }); toast("🏨 Otel yadda saxlandı (hamı üçün)"); } catch (e) { toast("Yadda saxlandı (yalnız bu telefonda)"); } renderMore(); };
+    $("#hSet").onclick = async () => { const v = { lat: S.me.lat, lng: S.me.lng, name: $("#hName").value.trim() || "Otel", addr: $("#hAddr").value.trim() }; S.hotel = v; LS.set("hotel", v); mapHotel(); try { await api("kv.set", { key: "hotel", value: v }); toast("🏨 Otel yadda saxlandı (hamı üçün)"); } catch (e) { toast("Yadda saxlandı (yalnız bu telefonda)"); } renderMore(); };
   }
 }
-function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" + Date.now(); S.album = [{ id, name: c.name, img: c.thumb, ts: Date.now() }].concat(S.album.filter(a => a.id !== id)).slice(0, 40); LS.set("album", S.album); }
-function renderAlbum(B) {
-  if (!S.album.length) { B.innerHTML = `<div class="card mute" style="text-align:center;padding:30px">📷<br>Hələ şəkil yoxdur.<br>Ana səhifədə “Yeri tanı” ilə başla.</div>`; return; }
-  B.innerHTML = `<div class="grid2">${S.album.map(a => `<div class="stamp" data-a="${esc(a.id)}"><img src="${a.img}" alt=""><div><b>${esc(short(a.name))}</b><br><span class="dim">${fmtT(a.ts)}</span></div></div>`).join("")}</div>`;
-  $$("[data-a]").forEach(s => s.onclick = () => { const p = byId[s.dataset.a]; if (p) tellAbout(p); });
+function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" + Date.now(); S.album = [{ id, name: c.name, img: c.thumb, ts: Date.now() }].concat(S.album.filter(a => a.id !== id)).slice(0, 40); LS.set("album", S.album); sharePhoto(c.thumb, c.name, c.poi ? c.poi.id : ""); }
+async function sharePhoto(thumb, name, poi) { if (!thumb || !S.code) return; try { await api("photo.add", { thumb, name: name || "", poi: poi || "", who: ME || "", ts: Date.now() }); } catch (e) {} }
+function taxiCard() {
+  const h = S.hotel || {};
+  $("#bigBox").innerHTML = `<div class="sm dim">🚕 Bitte bringen Sie mich zu:</div><div class="taxi">${esc(h.name || "Hotel")}</div>${h.addr ? `<div style="font-size:20px;font-weight:600">${esc(h.addr)}</div>` : ""}<div class="sm mute mt">“Zəhmət olmasa məni bu ünvana aparın”</div>
+   <div class="row mt"><a class="btn grow" href="https://www.google.com/maps/search/?api=1&query=${h.lat},${h.lng}" target="_blank" rel="noopener">📍 Xəritə</a><button class="btn pri grow" id="bbX">Oldu</button></div>`;
+  $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on");
+}
+async function renderAlbum(B) {
+  const draw = () => {
+    const shared = S.photos.map(p => ({ id: "s" + p.id, name: p.name || "Şəkil", img: p.thumb, ts: p.ts, who: p.who, poi: p.poi }));
+    const keys = new Set(shared.map(x => x.img));
+    const all = shared.concat(S.album.filter(a => !keys.has(a.img))).sort((a, b) => b.ts - a.ts);
+    B.innerHTML = `<label class="btn pri wide" style="position:relative;overflow:hidden">📷 Şəkil əlavə et (hamı görəcək)<input type="file" accept="image/*" multiple id="albIn" style="position:absolute;inset:0;opacity:0"></label>
+     ${all.length ? `<div class="grid2 mt">${all.map(a => `<div class="stamp" data-a="${esc(a.poi || a.id)}" data-img="${esc(a.img)}"><img src="${a.img}" alt="" loading="lazy"><div><b>${esc(short(a.name))}</b><br><span class="dim">${a.who ? esc(a.who) + " · " : ""}${fmtT(a.ts)}</span></div></div>`).join("")}</div>` : `<div class="card mute mt" style="text-align:center;padding:30px">Hələ şəkil yoxdur.<br>“Yeri tanı” ilə çəkilənlər də bura düşür.</div>`}`;
+    $("#albIn").onchange = async e => { const fs = Array.from(e.target.files || []).slice(0, 10); e.target.value = ""; if (!fs.length) return; toast("Yüklənir…");
+      for (const f of fs) { try { const t = (await shrink(f, 480, .72)).url; S.photos.unshift({ id: "l" + Date.now(), ts: Date.now(), who: ME || "", name: "", thumb: t }); await sharePhoto(t, "", ""); } catch (er) {} }
+      toast("✅ Albomda"); draw(); load(); };
+    $$("[data-a]").forEach(s => s.onclick = () => { const p = byId[s.dataset.a]; if (p) tellAbout(p); else { $("#bigBox").innerHTML = `<img src="${s.dataset.img}" style="width:100%;border-radius:14px"><button class="btn pri wide mt" id="bbX">Bağla</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on"); } });
+  };
+  const load = async () => { try { S.photos = (await api("photos")).photos || []; LS.set("photosCache", S.photos.slice(0, 30)); if (moreTab === "alb" && !$("#moreBody").hidden) draw(); } catch (e) {} };
+  draw(); load();
 }
 
 /* ---------- navigation ---------- */

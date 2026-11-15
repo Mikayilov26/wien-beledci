@@ -243,7 +243,7 @@ const INFO_HTML=`<div class="info">
 <li><b>Rathausplatz:</b> hər gün 10:00–22:00</li><li><b>Schönbrunn:</b> 10:00–21:00</li>
 <li><b>Stephansplatz:</b> həftəiçi 14:00-dan</li><li><b>Am Hof</b> və <b>Freyung:</b> ~10/11:00–21:00</li>
 <li>Glühwein fincanı üçün depozit alınır. Fincanı qaytarsan, pul geri verilir.</li></ul></div>
-<div class="card"><h3>☎️ Təcili nömrələr</h3><ul><li><b>112</b> — ümumi təcili yardım</li><li><b>144</b> — təcili tibbi yardım</li><li><b>133</b> — polis</li><li><b>122</b> — yanğın</li></ul></div>
+<div class="card"><h3>☎️ Təcili nömrələr</h3><ul><li><a href="tel:112"><b>112</b></a> — ümumi təcili yardım</li><li><a href="tel:144"><b>144</b></a> — təcili tibbi yardım</li><li><a href="tel:133"><b>133</b></a> — polis</li><li><a href="tel:122"><b>122</b></a> — yanğın</li><li><a href="tel:141"><b>141</b></a> — gecə həkimi (Ärztefunkdienst)</li></ul></div>
 <div class="card"><h3>💡 Faydalı qeydlər</h3><ul>
 <li>Bahşiş: məbləği 5–10% yuvarlaqlaşdır. Bəzi yerlərdə bahşiş hesaba artıq əlavə olunur, ona görə hesabı yoxla.</li>
 <li>Kran suyu təmizdir. Kafedə “Leitungswasser” istə, adətən pulsuzdur.</li>
