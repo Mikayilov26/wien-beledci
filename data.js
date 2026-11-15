@@ -358,3 +358,27 @@ const SHOP_TIPS = [
   "🌧 Yağışlı gündə: The Mall Wien Mitte (otelə yaxın) və ya Donau Zentrum.",
 ];
 const PARNDORF = { url: "https://www.mcarthurglen.com/en/outlets/at/designer-outlet-parndorf/plan-your-visit/", hrs: "B.e.–Cümə 9:00–21:00, Şənbə 9:00–18:00", shuttle: "Operanın qarşısından shuttle avtobus (onlayn bilet). Həftəiçi Vyanadan təxminən 9:30, 10:30, 11:30, 13:30; geri 16:00–20:00 arası. Dəqiq cədvəli saytda yoxla.", tip: "Yarım günlük plan lazımdır. 18 və ya 19 noyabr uyğundur." };
+
+// Best photo spots: [where to stand, best time]
+const PHOTO = {
+  stephansdom: ["Stephansplatz-ın Graben tərəfindəki küncündən — bütün fasad və cənub qülləsi kadra sığır. Rəngli dam üçün şimal qülləsinə liftlə qalx.", "Mavi saat: gün batandan 20–30 dəq sonra (~16:45)"],
+  karlskirche: ["Resselpark tərəfdə, hovuzun lap kənarından aşağı bucaqla — kilsə suda əks olunur.", "Axşam, işıqlar yananda"],
+  belvedere: ["Aşağı bağdan Yuxarı Belvederəyə doğru, hovuzu önə alaraq.", "Gündüz, günəşli saatlarda"],
+  schonbrunn: ["Gloriette təpəsindən saray və bütün şəhər bir kadrda. Həyətdə Milad bazarı ilə saray fasadı.", "Gün batımı (~16:15)"],
+  gloriette: ["Gloriette-nin qarşısındakı hovuzun kənarından — tağlar suda əks olunur.", "Gün batımı"],
+  hofburg: ["Michaelerplatz-dakı günbəzli girişin qarşısından; Heldenplatz-dan Yeni Hofburqun yarımdairəvi fasadı.", "Səhər, adam az olanda"],
+  heldenplatz: ["Atlı heykəli önə alıb Yeni Hofburq fonunda.", "Gündüz"],
+  rathaus: ["Burgtheater tərəfindən, Rathausplatz-ın ortasından — fasad və bazar işıqları birlikdə.", "Axşam, 17:00-dan sonra"],
+  staatsoper: ["Opernring-in qarşı tərəfindən, Kärntner Straße küncündən.", "Axşam, işıqlandırılmış"],
+  albertina: ["Albertina terrasından — Opera binası və Burggarten mənzərəsi.", "Gün batımı"],
+  hundertwasser: ["Kegelgasse ilə Löwengasse küncündən — rəngli fasadın tamamı.", "Gündüz, rənglər parlaq olanda"],
+  riesenrad: ["Prater girişindən aşağıdan yuxarı; kabinədən şəhər panoraması.", "Axşam işıqlarında"],
+  graben: ["Taun sütununun önündən Stephansdoma doğru, Milad işıqları ilə.", "Axşam"],
+  parlament: ["Ringstraße-nin qarşı tərəfindən, Pallas Afina fəvvarəsini önə alaraq.", "Gündüz və ya axşam"],
+  votiv: ["Sigmund-Freud-Park-dan — iki qüllə tam görünür.", "Gün batımı"],
+  secession: ["Friedrichstraße tərəfindən qızılı günbəzə yaxın plan.", "Günəşli gündüz"],
+  stadtpark: ["Qızılı Ştraus heykəlinin düz qarşısından.", "Gündüz"],
+  burggarten: ["Motsart heykəli və önündəki skripka açarı gül yatağı.", "Gündüz"],
+  ankeruhr: ["Hoher Markt meydanından körpü-saata baxan bucaq.", "Saat 12:00 — fiqurların paradı"],
+  "xm-rathaus": ["Girişdəki işıqlı tağın altından Rathausa doğru.", "Qaranlıq düşəndən sonra"],
+};

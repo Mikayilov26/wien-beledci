@@ -234,7 +234,7 @@ nav button.on{color:var(--red)}
 details summary{cursor:pointer;list-style:none}
 .taxi-box{background:#FFF8E6;border-radius:14px;padding:12px}
 .sumcard .stat{margin-top:6px}
-.minis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.minis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
 .minis button{background:var(--card);border-radius:14px;box-shadow:var(--sh);padding:10px 4px;font-size:13px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px}
 .minis button span{font-size:24px;line-height:1}
 .minis button.sos{color:#C8102E}
@@ -282,8 +282,10 @@ details summary{cursor:pointer;list-style:none}
         </div>
         <div class="minis" id="minis">
           <button data-act="taxi"><span>🚕</span>Taksi</button>
+          <button data-act2="book"><span>📅</span>Rezervlər</button>
           <button data-act="shop"><span>🛍</span>Alış-veriş</button>
           <button data-act="xmas"><span>🎄</span>Bazarlar</button>
+          <button data-act2="photo"><span>📸</span>Foto</button>
           <button data-act="gifts"><span>🎁</span>Hədiyyələr</button>
           <button data-act="book"><span>📔</span>Xatirələr</button>
           <button data-act="sos" class="sos"><span>🆘</span>İtmişəm</button>
@@ -352,7 +354,7 @@ details summary{cursor:pointer;list-style:none}
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="data.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="data.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

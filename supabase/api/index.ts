@@ -1,5 +1,6 @@
 // Wien Bələdçi API v2 — trip-code protected gateway: shared data + AI (Claude or Gemini, whichever key exists).
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const CORS = {
@@ -41,6 +42,11 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
   let b: any;
   try { b = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
+  // cron tick (pg_cron → every 2 min): send due reminders as push notifications
+  if (b && b.op === "push.tick") {
+    if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
+    return json(await pushTick());
+  }
   const code = await cfg("trip_code");
   if (!b || !code || b.k !== code) return json({ error: "forbidden" }, 403);
   // personal link → identity (server decides who you are; admin can act as anyone for testing)
@@ -211,6 +217,50 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
 
+      // ---- bookings / tickets (own + shared) and reminders ----
+      case "bookings": {
+        const { data, error } = await sb.from("bookings").select("*").or(`shared.eq.true,by.eq.${who || "-"}`).order("at", { ascending: true });
+        if (error) throw error;
+        return json({ bookings: data, vapid: await cfg("vapid_pub") });
+      }
+      case "booking.add": case "booking.upd": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const r = b.row ?? {};
+        const at = new Date(String(r.at ?? ""));
+        const title = String(r.title ?? "").trim().slice(0, 100);
+        if (!title || isNaN(at.getTime())) return json({ error: "invalid" }, 400);
+        const img = typeof r.img === "string" && r.img.startsWith("data:image/jpeg;base64,") && r.img.length < 600000 ? r.img : (r.img === null ? null : undefined);
+        const row: Record<string, unknown> = { title, at: at.toISOString(), shared: r.shared === true, poi: r.poi ? String(r.poi).slice(0, 40) : null, place: String(r.place ?? "").slice(0, 120), note: String(r.note ?? "").slice(0, 500), lead_min: Math.max(0, Math.min(1440, Number(r.lead_min) || 60)), sent: false };
+        if (img !== undefined) row.img = img;
+        if (b.op === "booking.add") {
+          const { data, error } = await sb.from("bookings").insert({ ...row, by: who }).select().single();
+          if (error) throw error;
+          return json({ booking: data });
+        }
+        const { data, error } = await sb.from("bookings").update(row).eq("id", String(b.id)).eq("by", who).select().single();
+        if (error) throw error;
+        return json({ booking: data });
+      }
+      case "booking.del": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const { error } = await sb.from("bookings").delete().eq("id", String(b.id)).eq("by", who);
+        if (error) throw error;
+        return json({ ok: true });
+      }
+      case "push.sub": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const sub = b.sub;
+        if (!sub || typeof sub.endpoint !== "string" || !sub.keys) return json({ error: "invalid" }, 400);
+        const { error } = await sb.from("push_subs").upsert({ endpoint: sub.endpoint, who, sub });
+        if (error) throw error;
+        return json({ ok: true });
+      }
+      case "push.test": {
+        if (!who) return json({ error: "no_user" }, 403);
+        const n = await sendTo([who], { title: "🔔 Wien Bələdçi", body: "Bildirişlər işləyir! Xatırlatmalar bura gələcək." });
+        return json({ sent: n });
+      }
+
       case "gt": return await freeTranslate(b);
       case "ai": return await aiText(b);
       case "price.extract": return await priceExtract(b);
@@ -223,6 +273,34 @@ Deno.serve(async (req) => {
 });
 
 /* ------------------------------------------------------------------ free machine translation (no AI cost) */
+async function sendTo(people: string[], msg: { title: string; body: string; url?: string }): Promise<number> {
+  const pub = await cfg("vapid_pub"), priv = await cfg("vapid_priv");
+  if (!pub || !priv) return 0;
+  webpush.setVapidDetails("https://wien-beledci.onrender.com", pub, priv);
+  const { data } = await sb.from("push_subs").select("endpoint,sub").in("who", people);
+  let n = 0;
+  for (const s of data ?? []) {
+    try { await webpush.sendNotification(s.sub, JSON.stringify(msg), { TTL: 3600 }); n++; }
+    catch (e: any) { if (e?.statusCode === 404 || e?.statusCode === 410) await sb.from("push_subs").delete().eq("endpoint", s.endpoint); }
+  }
+  return n;
+}
+async function pushTick() {
+  const now = Date.now();
+  const { data } = await sb.from("bookings").select("*").eq("sent", false).lte("at", new Date(now + 1440 * 60000).toISOString()).gte("at", new Date(now - 3600000).toISOString());
+  let sent = 0;
+  for (const bk of data ?? []) {
+    const due = new Date(bk.at).getTime() - (bk.lead_min ?? 60) * 60000;
+    if (due > now) continue;
+    const mins = Math.max(0, Math.round((new Date(bk.at).getTime() - now) / 60000));
+    const t = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit" }).format(new Date(bk.at));
+    const people = bk.shared ? PEOPLE : [bk.by];
+    sent += await sendTo(people, { title: `⏰ ${mins > 0 ? mins + " dəq sonra" : "İndi"}: ${bk.title}`, body: `${t}${bk.place ? " · " + bk.place : ""}${bk.note ? "\n" + bk.note : ""}` });
+    await sb.from("bookings").update({ sent: true }).eq("id", bk.id);
+  }
+  return { ok: true, sent };
+}
+
 async function freeTranslate(b: any): Promise<Response> {
   const q = String(b.q ?? "").slice(0, 1500).trim();
   const sl = /^[a-z]{2}$|^auto$/.test(b.sl) ? b.sl : "auto", tl = /^[a-z]{2}$/.test(b.tl) ? b.tl : "de";

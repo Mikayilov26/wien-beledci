@@ -297,7 +297,7 @@ function renderHome() {
     const left = toMin("08:45") - now.mins;
     if (left > -150) a = `<div class="alert"><span>✈️</span><div><b>${left > 0 ? `Otelden çıxmağa ${Math.floor(left / 60)} saat ${left % 60} dəq qalıb` : "İndi hava limanına yola düş!"}</b><span class="mute">Uçuş 12:00, Terminal 1. Wien Mitte → CAT avtobusu. 10:00-da hava limanında ol.${expAll().some(e => e.tf) ? ` 🧾 ${expAll().filter(e => e.tf).length} tax-free çekin var — əvvəl gömrükdə möhürlət (+20 dəq).` : ""}</span></div></div>` + a;
   }
-  $("#alertsBar").innerHTML = a;
+  $("#alertsBar").innerHTML = (typeof upcomingAlert === "function" ? upcomingAlert() : "") + a;
   // next plan item
   const day = PLAN.find(d => d.d === now.date);
   let nx = "";
@@ -461,7 +461,7 @@ function renderStory(fast) {
   $("#result").innerHTML = `<button class="back" data-back>‹ Geri</button>${c.img ? `<img class="photo" src="${c.img}" alt="">` : ""}
   <div class="ttl"><div class="grow"><h2 id="stTitle">${esc(c.name || "Tanıyıram…")}</h2>${p ? `<div>${rating(p)} ${pills(p)}</div>${price(p) ? `<div class="sm mute" style="margin-top:4px">💶 ${esc(price(p))}</div>` : ""}` : ""}${c.conf && !/yüksək/i.test(c.conf) ? `<div class="sm dim">Əminlik: ${esc(c.conf)}</div>` : ""}</div><button class="btn s" id="spk">🔊 Dinlə</button></div>
   <div class="card"><div class="story" id="stBox">${esc(c.story || "")}${c.loading && !c.story ? '<span class="spin"></span>' : ""}</div>
-  ${c.facts && c.facts.length ? `<ul class="facts">${c.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${c.tip ? `<div class="note">💡 ${esc(c.tip)}</div>` : ""}${c.err ? `<div class="note" style="color:#B23A2B">⚠️ ${esc(c.err)}</div>` : ""}</div>
+  ${c.facts && c.facts.length ? `<ul class="facts">${c.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${c.tip ? `<div class="note">💡 ${esc(c.tip)}</div>` : ""}${p && PHOTO[p.id] ? `<div class="note">📸 ${esc(PHOTO[p.id][0])} <b>${esc(PHOTO[p.id][1])}</b></div>` : ""}${c.err ? `<div class="note" style="color:#B23A2B">⚠️ ${esc(c.err)}</div>` : ""}</div>
   ${c.short && p && !c.loading ? `<button class="btn wide mt" id="moreSt">📖 Ətraflı hekayə${S.ai === false ? "" : " (AI)"}</button>` : ""}
   <div class="hscroll mt"><button class="chip" data-q="Daha ətraflı danış, maraqlı əhvalatlar əlavə et.">📖 Daha çox</button><button class="chip" data-q="İçəri girmək olar? Bilet və saatlar? Dəqiq bilmirsənsə rəsmi saytı yoxlamağı de.">🎟 Bilet</button><button class="chip" data-q="Ən gözəl foto bucağı haradadır?">📸 Foto</button></div>
   <div id="chat">${c.history.map(m => `<div class="msg ${m.role === "user" ? "me" : "ai"}">${esc(m.content)}</div>`).join("")}</div>
@@ -900,7 +900,7 @@ function openPoi(p) {
    ${p.g && p.g < MIN_R ? `<div class="note" style="color:#B5651D">Reytinq aşağıdır, tövsiyə etmirəm.</div>` : ""}${an ? `<div class="alert mt"><span>⚠️</span><div><b>${esc(an.title)}</b><span class="mute">${esc(an.detail)}</span></div></div>` : ""}
    <p class="mute" style="margin:8px 0">${esc(p.d)}</p>${price(p) ? `<div class="sm">💶 ${esc(price(p))}</div>` : ""}
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
-   ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}
+   ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}${PHOTO[p.id] ? `<div class="note">📸 ${esc(PHOTO[p.id][0])} <b>${esc(PHOTO[p.id][1])}</b></div>` : ""}
    <div class="row mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a></div>`;
   $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
@@ -945,6 +945,8 @@ function renderPlan() {
    <div class="card"><ul class="tl">${d.items.map((it, k) => { const p = it[3] ? byId[it[3]] : null; return `<li class="${k === nextIdx ? "now" : ""}"><div class="t">${it[0]}</div><div class="x2"><b>${esc(it[1])}</b><span>${esc(it[2])}</span>${p ? `<div style="margin-top:6px"><a class="lnk" data-route="${p.id}">🧭 Get</a><a class="lnk" data-tell="${p.id}">🔊 Hekayə</a>${p.pid ? `<a class="lnk" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}</div>` : ""}</div></li>`; }).join("")}</ul></div>
    ${planDay === 3 ? `<div class="alert mt"><span>✈️</span><div><b>Uçuş 12:00, Terminal 1</b><span class="mute">10:00-da hava limanında ol. CAT avtobusu Wien Mitte (Marxergasse 1b). Wien Mitte S-Bahn bağlıdır, U3/U4 işləyir.</span></div></div>` : ""}`;
   if (d.d <= now.date) { $("#planBody").insertAdjacentHTML("beforeend", summaryHTML(d.d, d.d === now.date ? "📊 Bu gün indiyədək" : "📊 Günün xülasəsi")); $$("#planBody [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share)); }
+  const bks = (typeof BOOK !== "undefined" ? BOOK : []).filter(b => vDate(b.at) === d.d);
+  if (bks.length) $("#planBody .card").insertAdjacentHTML("afterbegin", `<div class="sm dim" style="font-weight:700">🎟 Rezervlər</div><ul class="tl" style="margin-bottom:8px">${bks.map(b => `<li><div class="t">${hhmm(b.at)}</div><div class="x2"><b>${esc(b.title)}</b><span>${esc(b.place || "")}${b.note ? " · " + esc(b.note) : ""}</span></div></li>`).join("")}</ul>`);
   $$("#planBody [data-route]").forEach(a => a.onclick = () => { goView("map"); routeTo(byId[a.dataset.route]); });
   $$("#planBody [data-tell]").forEach(a => a.onclick = () => tellAbout(byId[a.dataset.tell]));
 }
@@ -1038,7 +1040,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "11";
+const APPV = "12";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1183,10 +1185,106 @@ async function bookScreen() {
 // ---------- wire up home mini tiles ----------
 $$("[data-act]").forEach(b => b.onclick = () => ({ taxi: quickTaxi, sos, xmas: xmasGuide, shop: shopGuide, gifts: () => giftScreen(), book: bookScreen })[b.dataset.act]());
 
+
+/* ================= v12: bookings, reminders, push, photo spots ================= */
+let BOOK = LS.get("bookings", []), VAPID = LS.get("vapid", "");
+const viennaISO = (date, time) => { const off = "+01:00"; return new Date(`${date}T${time}:00${off}`).toISOString(); };
+const hhmm = iso => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+async function bookingsLoad() { try { const j = await api("bookings"); BOOK = j.bookings || []; if (j.vapid) { VAPID = j.vapid; LS.set("vapid", VAPID); } LS.set("bookings", BOOK.map(b => Object.assign({}, b, { img: b.img ? "1" : null }))); } catch (e) {} }
+const bkMine = b => b.by === ME;
+function icsFor(b) {
+  const dt = d => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const end = new Date(new Date(b.at).getTime() + 3600000).toISOString();
+  const esc2 = t => String(t || "").replace(/[,;\\]/g, m => "\\" + m).replace(/\n/g, "\\n");
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//WienBeledci//AZ", "BEGIN:VEVENT", `UID:${b.id}@wien-beledci`, `DTSTAMP:${dt(Date.now())}`, `DTSTART:${dt(b.at)}`, `DTEND:${dt(end)}`, `SUMMARY:${esc2(b.title)}`, `LOCATION:${esc2(b.place || "")}`, `DESCRIPTION:${esc2(b.note || "")}`,
+    "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc2(b.title)}`, `TRIGGER:-PT${b.lead_min || 60}M`, "END:VALARM", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" })); a.download = "wien-" + (b.title || "rezerv").replace(/[^\wəöüğışçƏÖÜĞIŞÇ]+/g, "-").slice(0, 30) + ".ics"; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+}
+const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+const b64u = s => { const p = "=".repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function enablePush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return alertBox("🔔 Bildirişlər", /iPhone|iPad/.test(navigator.userAgent) && !isStandalone() ? "iPhone-da bildiriş üçün əvvəl tətbiqi <b>ana ekrana əlavə et</b> (Paylaş ⬆︎ → “Ana ekrana əlavə et”), sonra oradan açıb bu düyməni yenə bas.<br><br>O vaxta qədər “📅 Təqvimə” düyməsi ilə xatırlatma qura bilərsən — o, tətbiq bağlı olsa da işləyir." : "Bu brauzer bildirişləri dəstəkləmir. “📅 Təqvimə” düyməsindən istifadə et.");
+  }
+  try {
+    const perm = await Notification.requestPermission(); if (perm !== "granted") return toast("İcazə verilmədi");
+    const reg = await navigator.serviceWorker.ready; if (!VAPID) await bookingsLoad();
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) });
+    await api("push.sub", { sub: sub.toJSON() }); LS.set("pushOn", true); await api("push.test"); toast("🔔 Bildirişlər açıldı");
+    if ($("#bkPush")) $("#bkPush").outerHTML = `<div class="sync">🔔 Bildirişlər açıqdır</div>`;
+  } catch (e) { alertBox("🔔 Alınmadı", "Bildirişi aça bilmədim. “📅 Təqvimə” düyməsindən istifadə et."); }
+}
+const BK_PRESETS = Object.keys(TICKETS).filter(id => byId[id]).map(id => [id, "🎟 " + short(byId[id].name)]);
+async function bookScreen2(skip) {
+  if (!skip) { showResult(`<div class="card"><span class="spin"></span></div>`); await bookingsLoad(); }
+  const days = PLAN.map(d => d), now = Date.now();
+  const list = BOOK.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  showResult(`<div class="ttl"><h2>📅 Rezerv və biletlər</h2></div>
+   ${LS.get("pushOn", false) ? `<div class="sync">🔔 Bildirişlər açıqdır</div>` : `<button class="btn pri wide" id="bkPush">🔔 Xatırlatma bildirişlərini aç</button>`}
+   ${days.map(d => { const items = list.filter(b => vDate(b.at) === d.d); return items.length ? `<div class="sm dim mt" style="font-weight:700">${esc(d.t)} · ${esc(d.w)}</div>${items.map(b => { const past = new Date(b.at).getTime() < now - 3600000;
+     return `<div class="card mt" style="${past ? "opacity:.55" : ""}"><div style="display:flex;gap:10px;align-items:baseline"><b style="font:700 20px Fraunces,serif">${hhmm(b.at)}</b><div class="grow"><b>${esc(b.title)}</b>${b.place ? `<span class="s2">📍 ${esc(b.place)}</span>` : ""}${b.note ? `<span class="s2">📝 ${esc(b.note)}</span>` : ""}<span class="s2">${b.shared ? "👭 hamı üçün" : "🔒 yalnız mən"} · ⏰ ${b.lead_min >= 60 ? b.lead_min / 60 + " saat" : b.lead_min + " dəq"} əvvəl${b.sent ? " · ✓ xatırladıldı" : ""}</span></div></div>
+      <div class="row mt" style="flex-wrap:wrap">${b.img ? `<button class="btn s pri" data-bi="${b.id}">🎫 Bilet</button>` : ""}${b.poi && byId[b.poi] ? `<button class="btn s" data-bg="${b.poi}">🧭 Get</button>` : ""}<button class="btn s" data-bc="${b.id}">📅 Təqvimə</button>${bkMine(b) ? `<button class="btn s" data-be="${b.id}">✎</button><button class="btn s" data-bd="${b.id}">✕</button>` : ""}</div></div>`; }).join("")}` : ""; }).join("")}
+   ${list.length ? "" : `<div class="card mt mute" style="text-align:center">Bilet aldınız, masa sifariş etdiniz? Bura yazın — vaxtında xatırladacağam.</div>`}
+   <button class="btn pri wide mt" id="bkAdd">+ Rezerv / bilet əlavə et</button>`);
+  if ($("#bkPush")) $("#bkPush").onclick = enablePush;
+  $("#bkAdd").onclick = () => bookingForm(null);
+  $$("[data-bi]").forEach(x => x.onclick = () => { const b = BOOK.find(y => y.id === x.dataset.bi); if (b && b.img && b.img !== "1") { $("#bigBox").innerHTML = `<div class="sm dim">${esc(b.title)} · ${hhmm(b.at)}</div><img src="${b.img}" style="width:100%;border-radius:12px;margin-top:8px"><div class="sm mute mt">Ekran parlaqlığını artır ki, QR oxunsun.</div><button class="btn pri wide mt" id="bbX">Bağla</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = closeModal; } else bookScreen2(); });
+  $$("[data-bg]").forEach(x => x.onclick = () => { goView("map"); routeTo(byId[x.dataset.bg]); });
+  $$("[data-bc]").forEach(x => x.onclick = () => icsFor(BOOK.find(y => y.id === x.dataset.bc)));
+  $$("[data-be]").forEach(x => x.onclick = () => bookingForm(BOOK.find(y => y.id === x.dataset.be)));
+  $$("[data-bd]").forEach(x => { let armed = false; x.onclick = async () => { if (!armed) { armed = true; x.textContent = "Sil?"; setTimeout(() => { armed = false; x.textContent = "✕"; }, 2500); return; } try { await api("booking.del", { id: x.dataset.bd }); BOOK = BOOK.filter(y => y.id !== x.dataset.bd); bookScreen2(true); } catch (e) { toast(aiErr(e)); } }; });
+}
+function bookingForm(b) {
+  if (!ME) { toast("Əvvəl şəxsi linkini aç"); return; }
+  const d0 = b ? vDate(b.at) : (PLAN.find(d => d.d >= vNow().date) || PLAN[0]).d, t0 = b ? hhmm(b.at) : "10:00";
+  let img = b && b.img && b.img !== "1" ? b.img : null, shared = b ? b.shared : true;
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">${b ? "✎ Düzəlt" : "+ Rezerv / bilet"}</h3>
+   <div class="hscroll mt" id="bfPre">${BK_PRESETS.slice(0, 10).map(([id, t]) => `<button type="button" class="chip" data-pre="${id}">${esc(t)}</button>`).join("")}<button type="button" class="chip" data-pre="table">🍽 Masa sifarişi</button></div>
+   <input class="inp mt" id="bfT" placeholder="Nə? (məs. Schönbrunn bileti)" value="${esc(b ? b.title : "")}">
+   <div class="row mt"><select class="inp grow" id="bfD">${PLAN.map(d => `<option value="${d.d}" ${d.d === d0 ? "selected" : ""}>${esc(d.t)}</option>`).join("")}</select><input class="inp" id="bfH" type="time" value="${t0}" style="width:42%"></div>
+   <select class="inp mt" id="bfP"><option value="">📍 Yer (istəyə bağlı)</option>${POI.filter(p => !["metro"].includes(p.cat)).map(p => `<option value="${p.id}" ${b && b.poi === p.id ? "selected" : ""}>${esc(short(p.name))}</option>`).join("")}</select>
+   <input class="inp mt" id="bfN" placeholder="Qeyd: bron kodu, neçə nəfər…" value="${esc(b ? b.note || "" : "")}">
+   <div class="sm dim mt" style="text-align:left">Nə vaxt xatırladım?</div><div class="chips" id="bfL" style="margin-top:6px">${[[15, "15 dəq"], [30, "30 dəq"], [60, "1 saat"], [120, "2 saat"]].map(([v, t]) => `<button type="button" class="chip ${(b ? b.lead_min : 60) === v ? "on" : ""}" data-l="${v}">${t}</button>`).join("")}</div>
+   <div class="chips mt"><button type="button" class="chip ${shared ? "on" : ""}" id="bfS">👭 Hamı üçün</button><label class="chip" style="position:relative;overflow:hidden">🎫 ${img ? "Bilet şəkli ✓" : "Bilet şəkli/QR əlavə et"}<input type="file" accept="image/*" id="bfI" style="position:absolute;inset:0;opacity:0"></label></div>
+   <div class="row mt"><button class="btn grow" id="bfX">Ləğv et</button><button class="btn pri grow" id="bfOk">💾 Yadda saxla</button></div>`;
+  $("#bigModal").classList.add("on");
+  let lead = b ? b.lead_min : 60;
+  $$("#bfPre [data-pre]").forEach(x => x.onclick = () => { const id = x.dataset.pre; if (id === "table") { $("#bfT").value = "🍽 Masa sifarişi — "; $("#bfT").focus(); return; } $("#bfT").value = "🎟 " + short(byId[id].name) + " bileti"; $("#bfP").value = id; });
+  $$("#bfL .chip").forEach(x => x.onclick = () => { lead = +x.dataset.l; $$("#bfL .chip").forEach(y => y.classList.toggle("on", y === x)); });
+  $("#bfS").onclick = () => { shared = !shared; $("#bfS").classList.toggle("on", shared); };
+  $("#bfI").onchange = async e => { const f = e.target.files[0]; if (!f) return; try { img = (await shrink(f, 1100, .82)).url; e.target.parentElement.firstChild.textContent = "🎫 Bilet şəkli ✓"; } catch (er) { toast("Şəkli aça bilmədim"); } };
+  $("#bfX").onclick = closeModal;
+  $("#bfOk").onclick = async () => {
+    const title = $("#bfT").value.trim(); if (!title) { toast("Nə olduğunu yaz"); return; }
+    const poi = $("#bfP").value || null, row = { title, at: viennaISO($("#bfD").value, $("#bfH").value || "10:00"), poi, place: poi ? short(byId[poi].name) : "", note: $("#bfN").value.trim(), lead_min: lead, shared, img };
+    try { const j = await api(b ? "booking.upd" : "booking.add", b ? { id: b.id, row } : { row }); BOOK = BOOK.filter(x => x.id !== (b && b.id)).concat(j.booking); closeModal(); toast("✓ Yadda saxlandı" + (LS.get("pushOn", false) ? " — xatırladacağam" : "")); bookScreen2(true); }
+    catch (e) { toast("Alınmadı: " + aiErr(e)); }
+  };
+}
+// in-app reminder while the app is open (works even without push)
+setInterval(() => { const now = Date.now(); BOOK.forEach(b => { const due = new Date(b.at).getTime() - (b.lead_min || 60) * 60000, k = "rem." + b.id; if (now >= due && now < new Date(b.at).getTime() && !LS.get(k, false)) { LS.set(k, true); toast(`⏰ ${hhmm(b.at)}: ${b.title}`); try { if (Notification.permission === "granted") navigator.serviceWorker.ready.then(r => r.showNotification("⏰ " + b.title, { body: hhmm(b.at) + (b.place ? " · " + b.place : "") })); } catch (e) {} } }); }, 60000);
+function upcomingAlert() {
+  const now = Date.now(), nx = BOOK.filter(b => { const t = new Date(b.at).getTime(); return t > now && t - now < 3 * 3600000; }).sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+  if (!nx) return ""; const m = Math.round((new Date(nx.at).getTime() - now) / 60000);
+  return `<div class="alert" style="background:#FFF8E6"><span>⏰</span><div><b>${hhmm(nx.at)} · ${esc(nx.title)}</b><span class="mute">${m >= 60 ? Math.floor(m / 60) + " saat " + (m % 60) + " dəq" : m + " dəq"} qalıb${nx.place ? " · " + esc(nx.place) : ""}</span></div></div>`;
+}
+
+// ---------- 📸 photo spots ----------
+function photoGuide() {
+  const from = S.me || planGuess() || byId.stephansdom;
+  const list = Object.keys(PHOTO).filter(id => byId[id]).map(id => ({ p: byId[id], d: dist(from, byId[id]) })).sort((a, b) => a.d - b.d);
+  showResult(`<div class="ttl"><h2>📸 Foto nöqtələri</h2></div><div class="sm dim" style="margin:-6px 0 8px">Yaxından uzağa · noyabrda gün ~16:20-də batır</div>
+   ${list.map(({ p, d }) => `<div class="card mt"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">${esc(short(p.name))}</b><span class="km">${fmtKm(walkM(d))}</span></div>
+    <div class="sm" style="margin-top:6px">📍 ${esc(PHOTO[p.id][0])}</div><div class="sm" style="margin-top:4px">🕘 ${esc(PHOTO[p.id][1])}</div>
+    <div class="row mt"><button class="btn s pri" data-route="${p.id}">🧭 Get</button><a class="btn s" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a></div></div>`).join("")}`);
+  $$("#result [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
+}
+$$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), photo: photoGuide })[b.dataset.act2]());
+
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion();
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome());
   if (ADMIN && !ME) askWho();
   // quietly pre-download the city map once (works offline later)
   setTimeout(() => { const c = navigator.connection; if (!LS.get("offMap", 0) && !(c && (c.saveData || /2g/.test(c.effectiveType || "")))) offlineMap(); }, 6000);
