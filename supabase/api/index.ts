@@ -476,7 +476,7 @@ async function claudeOnce(model: string, content: any, maxTok: number, tools?: a
   return { text, sources };
 }
 async function geminiOnce(model: string, parts: any[], maxTok: number, search: boolean, thinking = "low") {
-  const body: any = { contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: maxTok + 2500, thinkingConfig: { thinkingLevel: thinking } } };
+  const body: any = { contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: maxTok + 1200, thinkingConfig: { thinkingLevel: thinking } } };
   if (search) body.tools = [{ google_search: {} }];
   let r: Response | null = null;
   for (const m of gemChain(model)) {
@@ -516,7 +516,7 @@ Görünməyən şeyi uydurma, boş saxla. YALNIZ JSON yaz:
   try {
     const out = prov === "claude"
       ? await claudeOnce(M.claude?.vision || "claude-haiku-5-5", [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b.image } }, { type: "text", text: prompt }], 400)
-      : await geminiOnce(M.gemini?.vision || "gemini-3.8-flash", [{ inline_data: { mime_type: "image/jpeg", data: b.image } }, { text: prompt }], 400, false);
+      : await geminiOnce(M.gemini?.extract || M.gemini?.vision || "gemini-3.1-flash-lite", [{ inline_data: { mime_type: "image/jpeg", data: b.image } }, { text: prompt }], 400, false);
     const o = parseJSON(out.text) ?? {};
     return json({ product: o, provider: prov });
   } catch (e: any) { return json({ error: e.code ?? "upstream" }, e.status ?? 502); }
@@ -534,7 +534,7 @@ async function priceSearch(b: any): Promise<Response> {
   // shared cache (12 h)
   if (!b.fresh) {
     const { data } = await sb.from("price_cache").select("result,provider,created_at").eq("key", key).maybeSingle();
-    if (data && Date.now() - new Date(data.created_at).getTime() < 12 * 3600_000) {
+    if (data && Date.now() - new Date(data.created_at).getTime() < 24 * 3600_000) {
       await logPrice(b, p, data.result);
       return json({ result: data.result, cached: true, provider: data.provider });
     }
@@ -557,7 +557,7 @@ Sonda YALNIZ bu JSON-u yaz:
   const M = await models();
   try {
     let out: { text: string; sources: { url: string; title: string }[] };
-    if (prov === "gemini") out = await geminiOnce(M.gemini?.search || "gemini-3.8-flash", [{ text: prompt }], 1200, true, "medium");
+    if (prov === "gemini") out = await geminiOnce(M.gemini?.search || "gemini-3.8-flash", [{ text: prompt }], 1200, true, "low");
     else out = await claudeOnce(M.claude?.search || "claude-haiku-5-5", prompt, 1200, [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }]);
     const o = parseJSON(out.text) ?? {};
     const clean = (arr: any, cur: string) => (Array.isArray(arr) ? arr : [])

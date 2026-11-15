@@ -555,9 +555,18 @@ function priceLinks(p) {
   const L = [[`https://www.google.com/search?q=${encodeURIComponent(q + " qiymət Bakı")}`, "Google AZ"], [`https://www.google.com/search?q=${encodeURIComponent(q + " fiyat")}`, "Google TR"], [`https://www.trendyol.com/sr?q=${encodeURIComponent(q)}`, "Trendyol"], [`https://umico.az/search?query=${encodeURIComponent(q)}`, "Umico"]];
   return `<div class="row mt" style="flex-wrap:wrap">${L.map(l => `<a class="btn s" href="${l[0]}" target="_blank" rel="noopener">${l[1]}</a>`).join("")}</div>`;
 }
+// a usable "look" link: real product page if we have one, otherwise a Google search on that store
+function offerUrl(o, p) {
+  const u = String(o.url || ""); let bare = true;
+  try { const x = new URL(u); bare = x.pathname.length <= 1 || /\.(jpe?g|png|webp|gif|svg)$/i.test(x.pathname) || /\/(storage|images?|cdn|media)\//i.test(x.pathname); } catch (e) {}
+  if (u && !bare) return u;
+  let site = ""; try { site = new URL(u).hostname.replace(/^www\./, ""); } catch (e) {}
+  const q = [p && p.brand, p && (p.code || p.model)].filter(Boolean).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(q + (site ? " site:" + site : " " + (o.store || "")))}`;
+}
 function offerList(arr, flag, r) {
   if (!arr || !arr.length) return "";
-  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}${o.url ? `<br><a class="sm" href="${esc(o.url)}" target="_blank" rel="noopener">bax ›</a>` : ""}</div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
+  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
 }
 function renderPrice(p, res, cached) {
   const r = R(), v = +p.vienna_eur || null, tf = v ? tfBack(v) : 0, va = v ? (v - tf) * r.azn : null;
@@ -1051,7 +1060,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "14";
+const APPV = "15";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
