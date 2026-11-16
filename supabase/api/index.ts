@@ -51,6 +51,26 @@ Deno.serve(async (req) => {
     if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
     return json(await briefMsg(String(b.date)));
   }
+  if (b && b.op === "dbg.search") {
+    if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
+    const model = String(b.model || "gemini-3.8-flash"), q = String(b.q || "adidas Samba OG B75806 fiyat");
+    const variants: Record<string, any> = {
+      snake: { tools: [{ google_search: {} }] },
+      camel: { tools: [{ googleSearch: {} }] },
+      snake_nothink: { tools: [{ google_search: {} }], noThink: true },
+    };
+    const out: Record<string, unknown> = {};
+    for (const [name, v] of Object.entries(variants)) {
+      const body: any = { contents: [{ role: "user", parts: [{ text: q }] }], tools: v.tools };
+      if (!v.noThink) body.generationConfig = { thinkingConfig: { thinkingLevel: "low" } };
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body) });
+      const t = await r.text();
+      let j: any = {}; try { j = JSON.parse(t); } catch { /* */ }
+      const c = j.candidates?.[0] ?? {};
+      out[name] = { status: r.status, keys: Object.keys(c), gm: c.groundingMetadata ? Object.keys(c.groundingMetadata) : null, q: c.groundingMetadata?.webSearchQueries, n: (c.groundingMetadata?.groundingChunks ?? []).length, usage: j.usageMetadata, text: (c.content?.parts ?? []).map((p: any) => p.text || "").join("").slice(0, 300), err: r.ok ? undefined : t.slice(0, 400) };
+    }
+    return json(out);
+  }
   const code = await cfg("trip_code");
   if (!b || !code || b.k !== code) return json({ error: "forbidden" }, 403);
   // personal link → identity (server decides who you are; admin can act as anyone for testing)
@@ -292,7 +312,7 @@ async function sendTo(people: string[], msg: { title: string; body: string; url?
 // ☀️ daily morning briefing (one push per trip day to everyone who enabled notifications)
 const BRIEF: Record<string, { at: string; title: string; items: string[] }> = {
   "2026-11-17": { at: "11:20", title: "Xoş gəldiniz! Gəliş və Köhnə şəhər", items: ["12:00 CAT avtobusu → Wien Mitte", "13:00 Hotel Stefanie — çantalar resepsiyaya", "15:00 Stephansdom + bazar", "19:00 Rathaus Milad bazarı"] },
-  "2026-11-18": { at: "08:00", title: "İmperator günü", items: ["09:00 U4 ilə Schönbrunn", "09:30 Schönbrunn sarayı", "11:30 Bağlar və Gloriette", "12:45 Schönbrunn Milad bazarı"] },
+  "2026-11-18": { at: "08:00", title: "İmperator günü", items: ["08:45 U4 ilə Schönbrunn", "09:30 Schönbrunn sarayı", "11:30 Bağlar və Gloriette", "12:45 Schönbrunn Milad bazarı"] },
   "2026-11-19": { at: "08:00", title: "Klimt, Hundertvasser, Prater", items: ["09:30 Belvedere – “Öpüş”", "11:45 Hundertwasserhaus", "13:00 Nahar: Al Zaytouna (halal)", "14:30 Prater – Riesenrad"] },
   "2026-11-20": { at: "06:45", title: "Dönüş günü — yaxşı yol!", items: ["07:30 Səhər yeməyi, check-out", "08:40 Taksi: otel → Wien Mitte", "09:10 CAT avtobusu", "10:00 Tax-free möhürü, sonra qeydiyyat"] },
 };
@@ -478,8 +498,9 @@ async function claudeOnce(model: string, content: any, maxTok: number, tools?: a
 async function geminiOnce(model: string, parts: any[], maxTok: number, search: boolean, thinking = "low") {
   const body: any = { contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: maxTok + 1200, thinkingConfig: { thinkingLevel: thinking } } };
   if (search) body.tools = [{ google_search: {} }];
-  let r: Response | null = null;
+  let r: Response | null = null, used = model;
   for (const m of gemChain(model)) {
+    used = m;
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
       method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
     });
@@ -489,8 +510,13 @@ async function geminiOnce(model: string, parts: any[], maxTok: number, search: b
   const j = await r.json();
   const cand = j.candidates?.[0] ?? {};
   const text = (cand.content?.parts ?? []).filter((p: any) => p.text && !p.thought).map((p: any) => p.text).join("");
-  const sources = (cand.groundingMetadata?.groundingChunks ?? []).filter((c: any) => c.web?.uri).map((c: any) => ({ url: c.web.uri, title: c.web.title ?? "" }));
-  return { text, sources, queries: cand.groundingMetadata?.webSearchQueries ?? [] };
+  // collect grounding data wherever the API puts it (field placement differs between model versions)
+  const deep = (o: any, k: string, acc: any[] = []): any[] => { if (o && typeof o === "object") { for (const [kk, v] of Object.entries(o)) { if (kk === k || kk === k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase())) acc.push(v); else deep(v, k, acc); } } return acc; };
+  const chunks = deep(j, "groundingChunks").flat();
+  const sources = chunks.filter((c: any) => c?.web?.uri).map((c: any) => ({ url: c.web.uri, title: c.web.title ?? c.web.domain ?? "" }));
+  const queries = deep(j, "webSearchQueries").flat().filter((x: any) => typeof x === "string");
+  const dbg = { model: used, finish: cand.finishReason ?? "", keys: Object.keys(cand).join(","), gm: deep(j, "groundingMetadata").length, tools: (j.usageMetadata?.toolUsePromptTokenCount ?? 0) };
+  return { text, sources, queries, dbg };
 }
 // if one Gemini model is overloaded (503) or rate-limited, try the other one
 const gemChain = (m: string) => m === "gemini-3.1-flash-lite" ? [m, "gemini-3.8-flash"] : [m, "gemini-3.1-flash-lite"];
@@ -549,24 +575,53 @@ ${ident}
 
 1) AZƏRBAYCAN (Bakı), qiymət AZN ilə: əvvəlcə markanın rəsmi Azərbaycan saytı (məs. zara.com/az, hm.com, lcwaikiki.az, nike.az, adidas.az, apple.com/az), sonra Azərbaycan onlayn mağazaları (umico.az, birmarket.az, trendyol.com/az, kontakt.az, irshad.az, bakuelectronics.az, ideal.az, sportmaster.az, parfum.az və s.).
 2) TÜRKİYƏ, qiymət TRY ilə: markanın rəsmi Türkiyə saytı, sonra trendyol.com, hepsiburada.com, n11.com, boyner.com.tr, beymen.com, sephora.com.tr, gratis.com, mediamarkt.com.tr və s.
-Axtarışda artikul kodunu və ya model adını istifadə et. Hər ölkədə ən çox 3 təklif.
+MÜTLƏQ Google Search alətindən istifadə et — yaddaşdan qiymət yazmaq qadağandır. Ən azı bu sorğuları et: "${[brand, code || model].filter(Boolean).join(" ")} fiyat" və "${[brand, code || model].filter(Boolean).join(" ")} qiymət Bakı". Hər ölkədə ən çox 3 təklif.
 QAYDALAR: Yalnız axtarış nəticələrində həqiqətən GÖRDÜYÜN qiymətləri yaz. Təxmin etmə. Eyni artikul/model isə "match":"exact", oxşar məhsuldursa "match":"similar". Tapmasan, siyahını boş qoy.
 Sonda YALNIZ bu JSON-u yaz:
 {"baku":[{"store":"","price":0,"currency":"AZN","url":"","match":"exact"}],"turkey":[{"store":"","price":0,"currency":"TRY","url":"","match":"exact"}],"note":"<1 qısa cümlə Azərbaycan dilində>"}`;
 
   const M = await models();
   try {
-    let out: { text: string; sources: { url: string; title: string }[] };
-    if (prov === "gemini") out = await geminiOnce(M.gemini?.search || "gemini-3.8-flash", [{ text: prompt }], 1200, true, "low");
-    else out = await claudeOnce(M.claude?.search || "claude-haiku-5-5", prompt, 1200, [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }]);
-    const o = parseJSON(out.text) ?? {};
+    let out: { text: string; sources: { url: string; title: string }[]; queries?: string[]; dbg?: any };
+    let o: any = {}, grounded = false;
+    if (prov === "gemini") {
+      // 1) two real Google searches in parallel (natural questions — strict-JSON prompts make the model skip searching)
+      const q = [brand, model, code].filter(Boolean).join(" ") || ean;
+      const sm = M.gemini?.search || "gemini-3.8-flash";
+      const trQ = `${q} fiyat. Bu ürünün Türkiye'deki güncel satış fiyatlarını bul: markanın resmi Türkiye sitesi, Trendyol, Hepsiburada, Boyner, n11 vb. Her mağaza için mağaza adı, fiyat (TL), ürün linki ve ürün kodunun aynı olup olmadığını yaz. En fazla 4 mağaza.`;
+      const azQ = `${q} qiymət Bakı. Bu məhsulun Azərbaycanda (Bakı) hazırkı satış qiymətini tap: markanın rəsmi Azərbaycan saytı, Umico, Birmarket, Trendyol Azərbaycan, Bakı mağazaları və s. Hər mağaza üçün ad, qiymət (AZN), link və artikulun eyni olub-olmadığını yaz. Ən çox 4 mağaza.`;
+      const [tr, az] = await Promise.all([geminiOnce(sm, [{ text: trQ }], 900, true, "low"), geminiOnce(sm, [{ text: azQ }], 900, true, "low")]);
+      const isG = (x: any) => x.sources.length > 0 || (x.queries ?? []).length > 0;
+      grounded = isG(tr) || isG(az);
+      out = { text: "", sources: [...tr.sources, ...az.sources], queries: [...(tr.queries ?? []), ...(az.queries ?? [])], dbg: { tr: tr.dbg, az: az.dbg } };
+      // 2) cheap structuring step, no search: only prices that appear in the found text
+      if (grounded) {
+        const fx = M.gemini?.fast || "gemini-3.1-flash-lite";
+        const conv = `Aşağıda internet axtarışının nəticələri var. Onlardan YALNIZ açıq yazılmış qiymətləri götür, heç nə uydurma.
+Məhsul: ${ident.replace(/\n/g, "; ")}
+--- TÜRKİYƏ ---
+${isG(tr) ? tr.text : "(axtarış alınmadı)"}
+--- BAKI ---
+${isG(az) ? az.text : "(axtarış alınmadı)"}
+---
+Qaydalar: qiymət aralığıdırsa (məs. 3000–4500 TL) ən aşağı konkret mağaza qiymətini götür; mağaza adı yoxdursa yazma. Eyni artikul/model "exact", oxşar "similar". Bakı üçün yalnız AZN qiymətləri, Türkiyə üçün yalnız TL.
+YALNIZ JSON:
+{"baku":[{"store":"","price":0,"currency":"AZN","url":"","match":"exact"}],"turkey":[{"store":"","price":0,"currency":"TRY","url":"","match":"exact"}],"note":"<1 qısa cümlə Azərbaycan dilində>"}`;
+        const c = await geminiOnce(fx, [{ text: conv }], 700, false, "low");
+        o = parseJSON(c.text) ?? {};
+      }
+    } else {
+      out = await claudeOnce(M.claude?.search || "claude-haiku-5-5", prompt, 1200, [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }]);
+      grounded = out.sources.length > 0;
+      o = grounded ? (parseJSON(out.text) ?? {}) : {};
+    }
     const clean = (arr: any, cur: string) => (Array.isArray(arr) ? arr : [])
       .map((x: any) => ({ store: String(x.store ?? "").slice(0, 60), price: Number(x.price), currency: cur, url: String(x.url ?? ""), match: x.match === "similar" ? "similar" : "exact" }))
       .filter((x: any) => x.price > 0 && x.price < 10_000_000)
       .map((x: any) => ({ ...x, url: resolveUrl(x, out.sources) }))
       .slice(0, 4);
-    const result = { baku: clean(o.baku, "AZN"), turkey: clean(o.turkey, "TRY"), note: String(o.note ?? "").slice(0, 300), sources: out.sources.slice(0, 8), at: Date.now() };
-    await sb.from("price_cache").upsert({ key, result, provider: prov, created_at: new Date().toISOString() });
+    const result = { baku: clean(o.baku, "AZN"), turkey: clean(o.turkey, "TRY"), note: grounded ? String(o.note ?? "").slice(0, 300) : "İnternet axtarışı bu dəfə alınmadı — “🔄 Təzədən” bas.", sources: out.sources.slice(0, 8), grounded, queries: (out.queries ?? []).slice(0, 6), dbg: out.dbg, at: Date.now() };
+    if (grounded) await sb.from("price_cache").upsert({ key, result, provider: prov, created_at: new Date().toISOString() });
     await logPrice(b, p, result);
     return json({ result, cached: false, provider: prov });
   } catch (e: any) { return json({ error: e.code ?? "upstream", detail: e.detail ? String(e.detail).slice(0, 300) : undefined }, e.status ?? 502); }
@@ -575,7 +630,12 @@ Sonda YALNIZ bu JSON-u yaz:
 function resolveUrl(offer: { url: string; store: string }, sources: { url: string; title: string }[]) {
   const dom = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
   const od = dom(offer.url);
-  if (od && sources.some((s) => dom(s.url) === od || s.title.replace(/^www\./, "") === od)) {
+  const sd = (s: { url: string; title: string }) => { const t = s.title.toLowerCase().replace(/^www\./, ""); return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(t) ? t : dom(s.url); };
+  if (od && sources.some((s) => sd(s) === od || od.endsWith("." + sd(s)) || sd(s).endsWith("." + od))) {
+    const s = sources.find((x) => sd(x) === od || od.endsWith("." + sd(x)) || sd(x).endsWith("." + od))!;
+    return offer.url.startsWith("http") && !/\.(jpe?g|png|webp|gif)$/i.test(offer.url) ? offer.url : s.url;
+  }
+  if (od && sources.some((s) => dom(s.url) === od)) {
     const hit = sources.find((s) => dom(s.url) === od);
     return hit ? (offer.url.startsWith("http") ? offer.url : hit.url) : offer.url;
   }

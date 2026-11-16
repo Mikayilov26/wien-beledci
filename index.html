@@ -319,15 +319,17 @@ details summary{cursor:pointer;list-style:none}
     <section class="view" id="v-tr">
       <div class="seg mt" id="trMode"><button data-m="say" class="on">🙋 Mən deyirəm</button><button data-m="listen">👂 Onlar deyir</button></div>
       <div id="trSay">
-        <form class="ask" id="trF"><input class="inp" id="trIn" placeholder="Yaz və ya axtar: hesab, tualet…" autocomplete="off" autocapitalize="off"><button class="btn pri">→ DE</button></form>
+        <div class="chips mt" id="trLang"><button class="chip on" data-l="de">🇩🇪 Almanca</button><button class="chip" data-l="en">🇬🇧 İngiliscə</button></div>
+        <form class="ask" id="trF"><input class="inp" id="trIn" placeholder="Yaz və ya axtar: hesab, tualet…" autocomplete="off" autocapitalize="off"><button class="btn pri" id="trGo">→ DE</button></form>
         <div id="trOut"></div>
         <div class="card mt" id="phrList"></div>
       </div>
       <div id="trListen" hidden>
         <div class="card mt" style="text-align:center">
+          <div class="chips" style="justify-content:center;margin-bottom:10px" id="lsSrc"><span class="sm mute" style="align-self:center">Danışan:</span><button class="chip on" data-l="de">🇩🇪 Almanca</button><button class="chip" data-l="en">🇬🇧 İngiliscə</button></div>
           <button class="mic" id="lsMic" aria-label="Dinlə">🎤</button>
           <div class="sm mute" id="lsHint" style="margin-top:8px">Bas və telefonu danışan adama tut</div>
-          <div class="chips" style="justify-content:center;margin-top:10px" id="lsTarget"><button class="chip on" data-l="az">🇦🇿 Azərbaycanca</button><button class="chip" data-l="tr">🇹🇷 Türkcə</button></div>
+          <div class="chips" style="justify-content:center;margin-top:10px" id="lsTarget"><span class="sm mute" style="align-self:center">Mənə:</span><button class="chip on" data-l="az">🇦🇿 Azərbaycanca</button><button class="chip" data-l="tr">🇹🇷 Türkcə</button></div>
         </div>
         <textarea class="inp mt" id="lsIn" rows="3" placeholder="Almanca mətn bura yazılacaq (əl ilə də yaza bilərsən)"></textarea>
         <div class="card mt" id="lsOut" hidden></div>
@@ -362,7 +364,7 @@ details summary{cursor:pointer;list-style:none}
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="data.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="data.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

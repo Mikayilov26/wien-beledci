@@ -136,31 +136,39 @@ const PLAN = [
   ["12:00","CAT avtobusu → Wien Mitte","Avtobus terminalı Terminal 3-ün qarşısındadır. Hər 12 dəqiqədən bir gedir, yol təxminən 21 dəqiqədir, bilet adambaşı 14,90 €. Ucuz variant: Railjet qatarı ilə Hauptbahnhof-a.","u-landstrasse",1],
   ["12:30","Wien Mitte → Hotel Stefanie (taksi ~7 dəq)","Taborstraße 12. Çamadanla ən rahatı taksidir. Alternativ: U4 Landstraße → Schwedenplatz (2 dayanacaq) + 5 dəq piyada.","hotel"],
   ["13:00","Otelə çantaları qoy","Check-in 15:00-dandır. Otelin 24 saat resepsiyası var — çantaları resepsiyada saxlatmağı xahiş edin.","hotel"],
-  ["13:30","Nahar: Dom Schnitzel ★4.8","Stephansdomun yanındadır. Alternativ: Figlmüller ★4.3 (rezerv lazımdır).","domschnitzel"],
+  ["13:30","Nahar: Dom Schnitzel ★4.8","Oteldən Schwedenbrücke körpüsündən keçib ~12 dəq piyada. Stephansdomun yanındadır. Alternativ: Figlmüller ★4.3 (rezerv lazımdır, şnitseli donuz ətindəndir — dana istəyin).","domschnitzel"],
   ["15:00","Stephansdom + Stephansplatz bazarı","Kafedralın içi pulsuzdur. Qüllə və katakombalar ödənişlidir. Bazar saat 14:00-da açılır.","stephansdom"],
   ["16:30","Graben → Kohlmarkt → Hofburg","Axşam işıqları altında gəzinti. Yol üstündə Demel ★4.2-də Kaiserschmarrn sına.","graben"],
   ["17:30","Café Central ★4.3","Melange qəhvəsi və Apfelstrudel. Növbə 20–30 dəqiqə ola bilər.","central"],
-  ["19:00","Christkindlmarkt – Rathausplatz","Glühwein, Kartoffelpuffer və işıqlandırılmış park. Bazar saat 22:00-dək açıqdır.","xm-rathaus"],
+  ["19:00","Christkindlmarkt – Rathausplatz","Café Central-dan ~10 dəq piyada. Glühwein (alkoqolsuz: Kinderpunsch), Kartoffelpuffer və işıqlandırılmış park. Bazar saat 22:00-dək açıqdır.","xm-rathaus"],
+  ["20:30","Şam yeməyi","Yüngül: bazarda Kartoffelpuffer, Langos, kestane. Oturaraq: Melker Stiftskeller ★4.6 (bazardan ~7 dəq, rezervlə).","melker"],
+  ["21:30","Otelə qayıdış","U2 Rathaus → Schottenring (2 dayanacaq), oradan körpüdən keçib ~8 dəq piyada. Yorğunsunuzsa taksi ~8 dəq (≈ 10–12 €).","u-rathaus"],
+  ["22:00","Check-in və dincəlmək","Resepsiyadan otaq kartlarını və çantaları alın. Sabah: 08:00 səhər yeməyi, 08:45 Schönbrunn-a çıxış.","hotel"],
  ]},
  {d:"2026-11-18",t:"18 noyabr",w:"Çərşənbə",title:"İmperator günü",items:[
-  ["09:00","U4 xətti ilə Schönbrunn-a","U Schönbrunn stansiyasında düş.","u-schonbrunn"],
+  ["08:00","Səhər yeməyi","Oteldə bufet (otaq qiymətinə daxil deyilsə ~24 €) və ya yaxınlıqdakı kafe.","hotel"],
+  ["08:45","Otel → Schönbrunn (U4)","Schwedenplatz-a 5 dəq piyada, U4 xətti (istiqamət Hütteldorf) ilə U Schönbrunn-da düş. Cəmi ~25 dəq. 24 saatlıq bilet sərfəlidir.","u-schwedenplatz"],
   ["09:30","Schönbrunn sarayı ★4.7","Bilet 30 € (22 otaq) və ya 42 € (40 otaq). Onlayn al.","schonbrunn",1],
   ["11:30","Saray bağları və Gloriette","Təpəyə 15–20 dəqiqəlik yoxuş var. Park pulsuzdur.","gloriette"],
   ["12:45","Schönbrunn Milad bazarı","Saray həyətindədir, 10:00–21:00 açıqdır.","xm-schonbrunn"],
-  ["14:00","Naschmarkt-da nahar","NENI ★4.3 və ya Papas ★4.4. U4 ilə Kettenbrückengasse-yə get.","naschmarkt"],
+  ["14:00","Naschmarkt-da nahar","U4 Schönbrunn → Kettenbrückengasse (5 dayanacaq). NENI ★4.3 və ya Papas ★4.4.","naschmarkt"],
   ["15:30","Secession və Karlskirche","Klimtin qızılı gümbəzi və barokko kilsəsi.","karlskirche"],
   ["16:30","Opera və Albertina ★4.7","Albertina çərşənbə günü 21:00-dək açıqdır (19,90 €).","albertina"],
   ["18:30","Şirniyyat: Demel ★4.2 və ya Landtmann ★4.4","Café Sacher ★3,9-un növbəsi uzundur. Sachertorte-ni Demel-də də sınaya bilərsən.","demel"],
-  ["19:30","Axşam: opera və ya sərbəst vaxt","Tamaşa və ucuz ayaqüstü yerlər üçün wiener-staatsoper.at saytına bax.","staatsoper"],
+  ["19:30","Axşam: 2 seçim","A) Opera tamaşası — biletlər və ucuz ayaqüstü yerlər wiener-staatsoper.at-da. B) Şam yeməyi: Gasthaus Reinthaler (operanın yanında) və ya halal Al Zaytouna (taksi ~7 dəq).","staatsoper"],
+  ["21:30","Otelə qayıdış","U1 Karlsplatz → Schwedenplatz (2 dayanacaq, istiqamət Leopoldau), sonra 5 dəq piyada. Sabah: 08:00 səhər yeməyi, 09:00 Belvedere-yə çıxış.","u-karlsplatz"],
  ]},
  {d:"2026-11-19",t:"19 noyabr",w:"Cümə axşamı",title:"Klimt, Hundertvasser, Prater",items:[
+  ["08:00","Səhər yeməyi","Oteldə və ya yaxınlıqda.","hotel"],
+  ["09:00","Otel → Belvedere","Ən rahatı taksidir: ~10 dəq (≈ 12–15 €). Metro ilə: U1 Schwedenplatz → Karlsplatz, sonra D tramvayı ilə “Schloss Belvedere” (~25 dəq).","u-schwedenplatz"],
   ["09:30","Belvedere – Klimtin “Öpüş” tablosu","Bilet 23 €-dur, vaxt slotu ilə satılır. Yuxarı Belvedere-dən başla.","belvedere",1],
-  ["11:45","Hundertwasserhaus və Kunsthaus","Rəngli, əyri xətli binalar. Xaricdən baxmaq pulsuzdur.","hundertwasser"],
+  ["11:45","Hundertwasserhaus və Kunsthaus","Belvedere-dən taksi ~8 dəq və ya ~25 dəq piyada. Rəngli, əyri xətli binalar. Xaricdən baxmaq pulsuzdur.","hundertwasser"],
   ["13:00","Nahar: Al Zaytouna ★4.6 (halal)","Stubenring-dədir, Hundertvasserdən yol üstündədir.","zaytouna"],
-  ["14:30","Prater – Riesenrad ★4.5","14,50 €. Bu həftə 10:00–19:45 açıqdır, kabinələr isti olur.","riesenrad"],
-  ["16:30","Stadtpark – Strauss heykəli","Qaranlıq düşəndə qısa gəzinti üçün uyğundur.","stadtpark"],
-  ["17:30","Am Hof və Freyung bazarları","Kiçik və daha sakit bazarlardır. Ankeruhr saatı yol üstündədir.","xm-amhof"],
-  ["19:30","Vida şam yeməyi: Plachutta ★4.3 və ya Melker Stiftskeller ★4.6","Hər ikisi üçün rezerv et.","plachutta"],
+  ["14:30","Prater – Riesenrad ★4.5","Wien Mitte-dən S-Bahn ilə Praterstern-ə 1 dayanacaq. 14,50 €. Bu həftə 10:00–19:45 açıqdır, kabinələr isti olur.","riesenrad"],
+  ["16:30","Stadtpark – Strauss heykəli","S-Bahn Praterstern → Wien Mitte, park vağzalın yanındadır. Qaranlıq düşəndə qısa gəzinti.","stadtpark"],
+  ["17:30","Am Hof və Freyung bazarları","Stadtpark-dan ~20 dəq piyada və ya taksi ~7 dəq. Kiçik, sakit bazarlardır. Ankeruhr saatı yol üstündədir.","xm-amhof"],
+  ["19:30","Vida şam yeməyi: Plachutta ★4.3 və ya Melker Stiftskeller ★4.6","Hər ikisi üçün rezerv et. Halal istəyirsinizsə: Al Zaytouna.","plachutta"],
+  ["21:30","Otelə qayıdış və çamadanlar","Plachutta-dan otelə ~12 dəq piyada. Çamadanları bu axşam yığın, tax-free çeklərini bir yerə qoyun. Resepsiyaya sabah 08:40 üçün taksi sifariş edin.","hotel"],
  ]},
  {d:"2026-11-20",t:"20 noyabr",w:"Cümə",title:"Dönüş günü",items:[
   ["07:30","Səhər yeməyi və check-out","Çamadanları axşamdan yığ, otaq kartlarını resepsiyaya qaytar.","hotel"],
@@ -270,7 +278,7 @@ const INFO_HTML=`<div class="info">
 <li><b>Reytinqlər:</b> Google-dan götürülüb. “Google” düyməsi Google Maps-da rəyləri açır.</li>
 <li><b>Xəbərlər:</b> 17–20 noyabr hər səhər nümayiş, bağlanma və hava yoxlanılıb bura əlavə olunur.</li>
 <li><b>Xərclər:</b> hər üç nəfər üçün ortaqdır, balans avtomatik hesablanır.</li>
-<li><b>Səs:</b> almanca dinləmək üçün Tərcümə → “Onlar deyir” → 🎤.</li></ul></div>
+<li><b>Səs:</b> almanca və ya ingiliscə dinləmək üçün Tərcümə → “Onlar deyir” → dili seç → 🎤.</li></ul></div>
 <div class="note" style="text-align:center">Qiymət və iş saatları dəyişə bilər. Gedəndən əvvəl rəsmi saytda yoxla.</div>
 </div>`;
 
@@ -389,9 +397,18 @@ const HELP = [
   ["🏠 Ana səhifə", `<ul><li><b>€ → ₼ konvertor</b>: məbləği yaz, manat və lirəni dərhal görürsən.</li><li><b>📷 Yeri tanı</b>: bina və ya abidənin şəklini çək, tarixini danışır və 🔊 ilə səsləndirir.</li><li><b>🛍 Qiymət</b>: məhsulun və ya etiketin şəklini çək, Bakı və Türkiyə qiymətini tapır. Tax-free nəzərə alınır.</li><li><b>🍽 Menyu</b>: menyunun şəklini çək, tərcümə edir və donuz ətini 🐷 ilə göstərir.</li><li><b>✨ İndi hara gedək?</b>: yaxınlıqda açıq və yüksək reytinqli yerlər.</li></ul>`],
   ["🔘 8 düymə", `<ul><li><b>🚕 Taksi</b>: otelə və ya sıradakı yerə Uber, Taxi 40100-ə zəng, sürücüyə göstərmək üçün iri ünvan.</li><li><b>📅 Rezervlər</b>: aldığınız bilet və masa sifarişləri; bilet QR-ı, “📅 Təqvimə” xatırlatması.</li><li><b>🛍 Alış-veriş</b>: Parndorf Outlet, lüks markalar, ticarət mərkəzləri.</li><li><b>🎄 Bazarlar</b>: Milad bazarları, saatları, nə yemək lazımdır.</li><li><b>📸 Foto</b>: ən gözəl foto bucaqları və vaxtları.</li><li><b>🎁 Hədiyyələr</b> 🔒: kimə nə alacağını yaz, alanda ✓ bas.</li><li><b>📔 Xatirələr</b> 🔒: gün-gün qeydlər, şəkillər; sonda PDF.</li><li><b>🆘 İtmişəm</b>: yerini qızlara göndərir, otelə taksi, 112.</li></ul>`],
   ["🗺 Xəritə", `<ul><li>Rəngli nöqtəyə toxun → məlumat, reytinq, bilet, foto məsləhəti.</li><li><b>🧭 Get</b> → yol, vaxt, yol boyu yerlər, <b>🚕 Taksi</b> qiyməti.</li><li><b>👭</b> düyməsi: yerini qızlarla paylaş, onları xəritədə gör (istədiyin vaxt söndür).</li><li><b>🏨</b>: otelə qayıt. <b>◎</b>: mən haradayam.</li></ul>`],
-  ["🗣 Tərcümə", `<ul><li><b>Mən deyirəm</b>: azərbaycanca yaz (səhv yazsan da tapır) → almanca + oxunuşu. <b>🔊</b> səsləndirir, <b>⛶</b> ekranı satıcıya göstər.</li><li><b>Onlar deyir</b>: <b>🎤</b> bas, telefonu danışan adama tut — azərbaycanca və ya türkcə tərcümə çıxır.</li></ul>`],
+  ["🗣 Tərcümə", `<ul><li>Yuxarıda dili seç: <b>🇩🇪 Almanca</b> və ya <b>🇬🇧 İngiliscə</b>. Hazır ifadələr və tərcümə seçilən dildə olur.</li><li><b>Mən deyirəm</b>: azərbaycanca yaz (səhv yazsan da tapır) → tərcümə + oxunuşu. <b>🔊</b> səsləndirir, <b>⛶</b> ekranı satıcıya göstər.</li><li><b>Onlar deyir</b>: danışanın dilini seç (almanca/ingiliscə), <b>🎤</b> bas, telefonu danışan adama tut — azərbaycanca və ya türkcə tərcümə çıxır.</li></ul>`],
   ["💶 Xərclər", `<ul><li><b>👭 Ortaq</b>: məbləğ → kim ödədi → kimlər üçün → Əlavə et. Hamı eyni siyahını görür, kim kimə borcludur avtomatik hesablanır. Borc qaytarılanda <b>✓ Ödəndi</b> bas.</li><li><b>👤 Mənim xərclərim</b> 🔒: paltar, kosmetika kimi şəxsi xərclər; yalnız sən görürsən.</li><li><b>🎯 Büdcə</b>: öz büdcəni yaz, nə qədər qaldığını görürsən.</li><li>Səhv yazsan <b>✎</b> ilə düzəlt. İnternet olmasa da yaz — sonra özü göndərir.</li><li>75 €-dan çox alanda kassada <b>“Tax free, bitte”</b> de və <b>🧾 Tax-free</b> işarələ.</li></ul>`],
   ["🗓 Plan bölməsi", `<ul><li><b>Plan</b>: hər günün proqramı, rezervlər də burada görünür; axşam günün xülasəsi.</li><li><b>Otel</b>: ünvan, zəng, check-in/check-out, taksi kartı.</li><li><b>Albom</b>: hamının şəkilləri. <b>Hazırlıq</b>: çanta siyahısı.</li><li><b>Məlumat</b>: bilet saytları, internetsiz iş, təcili nömrələr, tax-free, hava limanı.</li></ul>`],
   ["⚠️ Vacib", `<ul><li><b>20 noyabr</b>: 08:40-da oteldən taksi ilə Wien Mitte → CAT avtobusu. Uçuş 12:00, <b>Terminal 1</b>.</li><li><b>Tax-free</b> çekləri: hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə möhürlət.</li><li>Təcili yardım: <b>112</b>. Otel: Hotel Stefanie, Taborstraße 12.</li><li>Kartla ödəyəndə terminal soruşsa, <b>avro (EUR)</b> seç.</li></ul>`],
   ["🔧 Problem olsa", `<ul><li>Tətbiqi tam bağla və yenidən aç — yeni versiya özü yüklənir.</li><li>“Link işləmir” yazsa: Kənanın göndərdiyi şəxsi linki yenidən aç.</li><li>Yer görünmürsə: Ayarlar → Məxfilik → Məkan xidmətləri → Safari → “İstifadə zamanı”.</li></ul>`],
+];
+// English versions of PHR (same order): [English, Azerbaijani-letter pronunciation]
+const PHR_EN=[
+ ["Hello","hellou"],["Good morning","qud morninq"],["Good evening","qud ivninq"],["Thank you very much","senk yu veri maç"],["Please / Here you are","pliz / hiə yu a"],["Yes / No","yes / nou"],["Excuse me","ikskyuz mi"],["I don't speak German","ay dont spik cörmən"],["Do you speak English?","du yu spik inqliş?"],["I don't understand","ay dont andəstend"],["Slower, please","slouə, pliz"],["Goodbye","qudbay"],
+ ["A table for three, please","ə teybl for sri, pliz"],["I have a reservation","ay hev ə rezəveyşn"],["The menu, please","də menyu, pliz"],["The bill, please","də bil, pliz"],["We'll pay separately","vil pey sepərətli"],["Together, please","tuqedə, pliz"],["Can I pay by card?","ken ay pey bay kard?"],["Is there pork in it?","iz deə pork in it?"],["Without pork, please","videaut pork, pliz"],["Do you have halal food?","du yu hev halal fud?"],["Veal schnitzel","vil şnitsel"],["Chicken","çikin"],["Fish","fiş"],["Vegetarian","vecəteəriən"],["Non-alcoholic","non-alkəholik"],["Tap water, please","tep votə, pliz"],["Still water","stil votə"],["A coffee with milk, please","ə kofi viz milk, pliz"],["A tea, please","ə ti, pliz"],["Very tasty!","veri teysti!"],
+ ["How much is this?","hau maç iz zis?"],["Is there a discount?","iz deə ə diskaunt?"],["Do you have another size?","du yu hev ənadə sayz?"],["Can I try this on?","ken ay tray zis on?"],["Tax-free form, please","teks-fri form, pliz"],["I'm just looking","aym cast lukinq"],
+ ["Where is …?","veə iz …?"],["Where is the toilet?","veə iz də toylet?"],["Where is the metro?","veə iz də metrou?"],["Does this bus go to the airport?","daz zis bas qou tu di eəport?"],["One ticket, please","van tikit, pliz"],["Right / Left / Straight on","rayt / left / streyt on"],["Is it far?","iz it far?"],["Please call a taxi","pliz kol ə teksi"],
+ ["How do I get to the hotel?","hau du ay qet tu də houtel?"],["Can you keep our luggage?","ken yu kip auə laqic?"],["What time is check-out?","vot taym iz çek-aut?"],["What is the Wi-Fi password?","vot iz də vay-fay pasvörd?"],
+ ["Help!","help!"],["Call the police!","kol də polis!"],["I need a doctor","ay nid ə doktə"],["Where is a pharmacy?","veə iz ə farməsi?"],["I lost my bag","ay lost may beq"],
 ];

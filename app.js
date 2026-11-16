@@ -563,6 +563,12 @@ async function priceSearch(fresh) {
     $("#pfBack").onclick = () => priceForm("");
   }
 }
+// keep only offers from the right country (an adidas.com/us price must not count as "Baku")
+const okDom = (o, cc) => { let h = "", seg = ""; try { const u = new URL(o.url); h = u.hostname.replace(/^www\./, ""); seg = (u.pathname.split("/")[1] || "").toLowerCase(); } catch (e) { return true; } if (/vertexaisearch|google\./.test(h)) return true;
+  if (new RegExp(`^(${cc}|[a-z]{2}[-_]${cc}|${cc}[-_][a-z]{2})$`).test(seg)) return true;
+  if (h.startsWith(cc + ".")) return true; // tr.dior.com // zara.com/az, apple.com/az, hm.com/tr_tr
+  return cc === "az" ? /\.az$/.test(h) || /(^|\.)trendyol\.com$/.test(h) : /\.tr$/.test(h) || /(^|\.)(trendyol|hepsiburada|n11|beymen|gratis|cimri|akakce)\.com$/.test(h); };
+const sane = res => Object.assign({}, res || {}, { baku: ((res || {}).baku || []).filter(o => okDom(o, "az")), turkey: ((res || {}).turkey || []).filter(o => okDom(o, "tr")) });
 const toAzn = (o, r) => o.currency === "TRY" ? o.price / r.try * r.azn : o.currency === "EUR" ? o.price * r.azn : o.price;
 const bestOf = arr => { const ex = (arr || []).filter(o => o.match === "exact"); const pool = ex.length ? ex : (arr || []); return pool.length ? pool.reduce((a, c) => a.price <= c.price ? a : c) : null; };
 function priceLinks(p) {
@@ -581,9 +587,10 @@ function offerUrl(o, p) {
 }
 function offerList(arr, flag, r) {
   if (!arr || !arr.length) return "";
-  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
+  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a> · <a class="sm dim" href="${esc(offerUrl({ store: o.store, url: (() => { try { return "https://" + new URL(o.url).hostname + "/"; } catch (e) { return ""; } })() }, prCur && prCur.p))}" target="_blank" rel="noopener">Google-da</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
 }
 function renderPrice(p, res, cached) {
+  res = sane(res);
   const r = R(), v = +p.vienna_eur || null, tf = v ? tfBack(v) : 0, va = v ? (v - tf) * r.azn : null;
   const bb = bestOf(res.baku), bt = bestOf(res.turkey);
   const ba = bb ? toAzn(bb, r) : null, ta = bt ? toAzn(bt, r) : null;
@@ -602,11 +609,11 @@ function renderPrice(p, res, cached) {
     <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${bt ? fm(bt.price, 0) + " ₺" : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : "tapılmadı"}</span></div>
    </div>
    ${save ? `<div class="settle mt">💡 <b>${esc(save)}</b></div>` : ""}
-   ${none ? `<div class="note">Bu məhsulun Bakı və Türkiyə qiyməti internetdə tapılmadı. Artikul kodunu yazıb yenidən yoxla və ya aşağıdakı linklərə bax.</div>` : ""}
+   ${res.grounded === false ? `<div class="note" style="color:#B23A2B">⚠️ Bu dəfə internet axtarışı alınmadı, ona görə qiymət göstərmirəm. “🔄 Təzədən” bas.</div>` : none ? `<div class="note">Bu məhsulun Bakı və Türkiyə qiyməti internetdə tapılmadı. Artikul kodunu yazıb yenidən yoxla və ya aşağıdakı linklərə bax.</div>` : ""}
    ${offerList(res.baku, "🇦🇿 Bakı mağazaları", r)}${offerList(res.turkey, "🇹🇷 Türkiyə mağazaları", r)}
    ${tf ? `<div class="note">🧾 75 €-dan çox olduğu üçün tax-free ilə ≈ ${fm(tf)} € geri ala bilərsən — müqayisə bunu nəzərə alır. Kassada “Tax free, bitte” de, pasportu göstər.</div>` : v && v < TF_MIN ? `<div class="note">🧾 Eyni mağazada bir çekdə 75,01 €-dan çox alsan, ≈12% ƏDV geri ala bilərsən.</div>` : ""}
    ${res.note ? `<div class="note">${esc(res.note)}</div>` : ""}
-   <div class="note">“eyni” — eyni artikul, “oxşar” — yaxın model. Qiymətlər ${cached ? "son 12 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
+   <div class="note">“eyni” — eyni artikul, “oxşar” — yaxın model. Qiymətlər ${cached ? "son 24 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
    ${priceLinks(p)}
    <div class="row mt"><button class="btn grow" id="prEdit">✏️ Düzəlt</button><button class="btn grow" id="prFresh">🔄 Təzədən</button></div>
    ${v ? `<button class="btn pri wide mt" id="prAdd">💶 Aldım — xərclərə yaz</button>` : ""}`;
@@ -621,7 +628,7 @@ async function priceHistory() {
   if (!list.length) { $("#phB").innerHTML = `<div class="mute" style="text-align:center;padding:16px">Hələ heç nə yoxlanmayıb.<br>“🛍 Qiymət” ilə başla.</div>`; return; }
   const r = R(), seen = new Set();
   list = list.filter(x => { const k = (x.brand + "|" + (x.code || x.name)).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-  $("#phB").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hər üç telefonda görünür</div><ul class="list">${list.map((x, i) => { const bb = bestOf(x.result && x.result.baku), bt = bestOf(x.result && x.result.turkey);
+  $("#phB").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hər üç telefonda görünür</div><ul class="list">${list.map((x, i) => { const sr = sane(x.result), bb = bestOf(sr.baku), bt = bestOf(sr.turkey);
     return `<li class="hist" data-h="${i}">${x.thumb ? `<img src="${x.thumb}" alt="">` : `<img alt="">`}<div class="grow"><b>${esc([x.brand, x.name].filter(Boolean).join(" · ") || "Məhsul")}</b><span class="s2">${x.vienna_eur ? "🇦🇹 " + fm(+x.vienna_eur) + " € · " : ""}${bb ? "🇦🇿 " + fm(bb.price, 0) + " ₼ · " : ""}${bt ? "🇹🇷 ≈" + fm(toAzn(bt, r), 0) + " ₼" : ""}</span><span class="s2 dim">${esc(x.who || "")} · ${fmtT(x.ts)}</span></div></li>`; }).join("")}</ul>`;
   $$("[data-h]").forEach(li => li.onclick = () => { const x = list[+li.dataset.h]; const p = { brand: x.brand, model: x.name, code: x.code, vienna_eur: x.vienna_eur };
     prCur = { img: null, thumb: x.thumb, p }; showResult(`${x.thumb ? `<img class="photo" src="${x.thumb}" alt="" style="max-height:200px;object-fit:contain">` : ""}<div class="ttl"><h2 id="prT"></h2></div><div class="card" id="prB"></div>`); renderPrice(p, x.result || {}, true); });
@@ -635,9 +642,9 @@ function stopSpeak() { try { speechSynthesis.cancel(); } catch (e) {} speaking =
 function speak(text, lang) {
   stopSpeak(); if (!text || !window.speechSynthesis) return;
   const vs = speechSynthesis.getVoices();
-  const v = lang === "de" ? vs.find(x => /^de/i.test(x.lang)) : lang === "tr" ? vs.find(x => /^tr/i.test(x.lang)) : (vs.find(x => /^az/i.test(x.lang)) || vs.find(x => /^tr/i.test(x.lang)));
+  const v = lang === "en" ? (vs.find(x => /^en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang))) : lang === "de" ? vs.find(x => /^de/i.test(x.lang)) : lang === "tr" ? vs.find(x => /^tr/i.test(x.lang)) : (vs.find(x => /^az/i.test(x.lang)) || vs.find(x => /^tr/i.test(x.lang)));
   const parts = text.match(/[^.!?\n]+[.!?]*/g) || [text]; speaking = true; $$("#spk").forEach(b => b.textContent = "⏹ Dayan");
-  parts.forEach((p, i) => { const u = new SpeechSynthesisUtterance(p.trim()); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = lang === "de" ? "de-DE" : "tr-TR"; u.rate = lang === "de" ? .9 : 1; if (i === parts.length - 1) u.onend = u.onerror = () => stopSpeak(); speechSynthesis.speak(u); });
+  parts.forEach((p, i) => { const u = new SpeechSynthesisUtterance(p.trim()); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = lang === "en" ? "en-GB" : lang === "de" ? "de-DE" : "tr-TR"; u.rate = lang === "de" || lang === "en" ? .9 : 1; if (i === parts.length - 1) u.onend = u.onerror = () => stopSpeak(); speechSynthesis.speak(u); });
 }
 try { speechSynthesis.getVoices(); } catch (e) {}
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -646,7 +653,17 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 function normT(s) { return String(s || "").toLowerCase().replace(/ə/g, "e").replace(/ı/g, "i").replace(/i̇/g, "i").replace(/ş/g, "s").replace(/ç/g, "c").replace(/ğ/g, "g").replace(/ö/g, "o").replace(/ü/g, "u").replace(/ä/g, "a").replace(/ß/g, "ss").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
 function lev(a, b) { if (a === b) return 0; const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; let pr = Array.from({ length: n + 1 }, (_, j) => j);
   for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(pr[j] + 1, c[j - 1] + 1, pr[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); pr = c; } return pr[n]; }
-const PIDX = PHR.map(p => ({ p, w: [...new Set(normT(p[0] + " " + p[1] + " " + p[3]).split(" ").filter(w => w.length > 1))] }));
+const PIDX = PHR.map((p, i) => ({ p, w: [...new Set(normT(p[0] + " " + p[1] + " " + p[3] + " " + ((PHR_EN[i] || [])[0] || "")).split(" ").filter(w => w.length > 1))] }));
+// target language for "Mən deyirəm": de (German) or en (English)
+let trLang = LS.get("trLang", "de");
+const phrT = i => trLang === "en" ? PHR_EN[i][0] : PHR[i][1];
+const phrSay = i => trLang === "en" ? PHR_EN[i][1] : PHR[i][2];
+const LNAME = { de: "Almanca", en: "İngiliscə" };
+function setTrLang(l) {
+  trLang = l; LS.set("trLang", l);
+  $$("#trLang .chip").forEach(x => x.classList.toggle("on", x.dataset.l === l));
+  $("#trGo").textContent = l === "en" ? "→ EN" : "→ DE"; $("#trOut").innerHTML = ""; renderPhr();
+}
 function searchPhr(q) {
   const qt = normT(q).split(" ").filter(w => w.length > 1); if (!qt.length) return [];
   return PIDX.map(x => { let sc = 0; for (const t of qt) { let best = 0; for (const w of x.w) { let v = 0;
@@ -654,17 +671,18 @@ function searchPhr(q) {
     else if (t.length >= 4) { const d = Math.min(lev(t, w), lev(t, w.slice(0, t.length + 1))); if (d <= 1) v = .7; else if (d <= 2 && t.length >= 6) v = .5; }
     if (v > best) best = v; } sc += best; } return { p: x.p, sc: sc / qt.length }; }).filter(x => x.sc >= .5).sort((a, b) => b.sc - a.sc).slice(0, 8).map(x => x.p);
 }
-const phrRow = p => { const i = PHR.indexOf(p); return `<div class="phr"><div class="grow"><b class="de" data-big="${i}">${esc(p[1])}</b><span>${esc(p[0])} · <i>${esc(p[2])}</i></span></div><button class="btn s" data-say="${i}">🔊</button></div>`; };
+const phrRow = p => { const i = PHR.indexOf(p); return `<div class="phr"><div class="grow"><b class="de" data-big="${i}">${esc(phrT(i))}</b><span>${esc(p[0])} · <i>${esc(phrSay(i))}</i></span></div><button class="btn s" data-say="${i}">🔊</button></div>`; };
 function renderPhr() {
   const q = $("#trIn").value.trim(), box = $("#phrList");
   if (!q) { const cats = [...new Set(PHR.map(p => p[4]))]; box.innerHTML = cats.map(c => `<details ${c === "Restoran" ? "open" : ""}><summary style="cursor:pointer;font-weight:700;padding:8px 0">${c}</summary>${PHR.filter(p => p[4] === c).map(phrRow).join("")}</details>`).join(""); }
-  else { const r = searchPhr(q); box.innerHTML = r.length ? r.map(phrRow).join("") : `<div class="mute sm">Hazır ifadə yoxdur. <b>→ DE</b> bas, tərcümə edim.</div>`; }
-  box.querySelectorAll("[data-say]").forEach(b => b.onclick = () => speak(PHR[+b.dataset.say][1].replace(" / ", ". "), "de"));
-  box.querySelectorAll("[data-big]").forEach(b => b.onclick = () => showBig(PHR[+b.dataset.big][1], PHR[+b.dataset.big][0]));
+  else { const r = searchPhr(q); box.innerHTML = r.length ? r.map(phrRow).join("") : `<div class="mute sm">Hazır ifadə yoxdur. <b>${trLang === "en" ? "→ EN" : "→ DE"}</b> bas, tərcümə edim.</div>`; }
+  box.querySelectorAll("[data-say]").forEach(b => b.onclick = () => speak(phrT(+b.dataset.say).replace(" / ", ". "), trLang));
+  box.querySelectorAll("[data-big]").forEach(b => b.onclick = () => showBig(phrT(+b.dataset.big), PHR[+b.dataset.big][0], trLang));
 }
-function showBig(de, az) {
+function showBig(de, az, lang) {
+  lang = lang || "de";
   $("#bigBox").innerHTML = `<div class="sm dim">Bu ekranı göstər</div><div class="big-de">${esc(de)}</div><div class="mute">${esc(az || "")}</div><div class="row" style="justify-content:center;margin-top:16px"><button class="btn pri" id="bgS">🔊 Səsləndir</button><button class="btn" id="bgX">Bağla</button></div>`;
-  $("#bigModal").classList.add("on"); $("#bgS").onclick = () => speak(de, "de"); $("#bgX").onclick = () => $("#bigModal").classList.remove("on");
+  $("#bigModal").classList.add("on"); $("#bgS").onclick = () => speak(de, lang); $("#bgX").onclick = () => $("#bigModal").classList.remove("on");
 }
 $("#bigModal").addEventListener("click", e => { if (e.target.id === "bigModal") $("#bigModal").classList.remove("on"); });
 let trT = 0; $("#trIn").addEventListener("input", () => { clearTimeout(trT); trT = setTimeout(renderPhr, 120); });
@@ -678,35 +696,41 @@ function deSay(t) {
 async function freeTr(q, sl, tl) { const j = await api("gt", { q, sl, tl }); if (!j || !j.text) throw { code: "upstream" }; return j.text; }
 $("#trF").onsubmit = async e => {
   e.preventDefault(); const q = $("#trIn").value.trim(); if (!q) return; $("#trIn").blur();
-  const out = $("#trOut"); out.innerHTML = `<div class="card mt"><span class="spin"></span></div>`;
+  const L = trLang, out = $("#trOut"); out.innerHTML = `<div class="card mt"><span class="spin"></span></div>`;
+  const show = (t, ox, mn) => {
+    out.innerHTML = `<div class="card mt"><div class="sm dim">${L === "en" ? "🇬🇧 İngiliscə" : "🇩🇪 Almanca"}</div><div class="de" id="trDe">${esc(t)}</div>${ox ? `<div class="mute sm" style="margin-top:4px">🗣 ${esc(ox)}</div>` : ""}${mn ? `<div class="dim sm">↩︎ ${esc(mn)}</div>` : ""}<div class="row mt"><button class="btn s pri" id="trS">🔊 Səsləndir</button><button class="btn s" id="trB">⛶ Böyük göstər</button></div></div>`;
+    $("#trS").onclick = () => speak(t, L); $("#trB").onclick = $("#trDe").onclick = () => showBig(t, q, L); speak(t, L);
+  };
   try {
-    const de = await freeTr(q, "auto", "de"); let mn = ""; try { mn = await freeTr(de, "de", "az"); } catch (x) {}
-    out.innerHTML = `<div class="card mt"><div class="de" id="trDe">${esc(de)}</div><div class="mute sm" style="margin-top:4px">🗣 ${esc(deSay(de))}</div>${mn ? `<div class="dim sm">↩︎ ${esc(mn)}</div>` : ""}<div class="row mt"><button class="btn s pri" id="trS">🔊 Səsləndir</button><button class="btn s" id="trB">⛶ Böyük göstər</button></div></div>`;
-    $("#trS").onclick = () => speak(de, "de"); $("#trB").onclick = $("#trDe").onclick = () => showBig(de, q); speak(de, "de"); return;
+    const t = await freeTr(q, "auto", L); let mn = ""; try { mn = await freeTr(t, L, "az"); } catch (x) {}
+    show(t, L === "de" ? deSay(t) : "", mn); return;
   } catch (e0) { if (S.ai === false) { out.innerHTML = `<div class="card mt">${esc(aiErr(e0))}</div>`; return; } }
   try {
-    const t = await ai({ mode: "tr", tier: "fast", max_tokens: 300, prompt: `Bu mətni Vyanada danışılan təbii almancaya (nəzakətli Sie) tərcümə et. Mətn azərbaycan, türk, rus və ya ingilis dilində və səhv yazılmış ola bilər.\nMətn: """${q}"""\nDƏQİQ FORMAT:\nDE: <almanca>\nOXU: <Azərbaycan hərfləri ilə oxunuş>\nMƏNA: <qısa geri tərcümə az>`,
-      onText: x => { const d = (x.match(/DE:\s*([^\n]*)/) || [])[1]; if (d) out.innerHTML = `<div class="card mt"><div class="de">${esc(d)}</div></div>`; } });
-    const g = re => { const m = t.match(re); return m ? m[1].trim() : ""; }; const de = g(/DE:\s*([^\n]*)/), ox = g(/OXU:\s*([^\n]*)/), mn = g(/MƏNA:\s*([^\n]*)/);
-    if (!de) throw { code: "x" };
-    out.innerHTML = `<div class="card mt"><div class="de" id="trDe">${esc(de)}</div><div class="mute sm" style="margin-top:4px">🗣 ${esc(ox)}</div><div class="dim sm">${esc(mn)}</div><div class="row mt"><button class="btn s pri" id="trS">🔊 Səsləndir</button><button class="btn s" id="trB">⛶ Böyük göstər</button></div></div>`;
-    $("#trS").onclick = () => speak(de, "de"); $("#trB").onclick = $("#trDe").onclick = () => showBig(de, q); speak(de, "de");
+    const lname = L === "en" ? "sadə, nəzakətli ingilis dilinə" : "Vyanada danışılan təbii almancaya (nəzakətli Sie)";
+    const t = await ai({ mode: "tr", tier: "fast", max_tokens: 300, prompt: `Bu mətni ${lname} tərcümə et. Mətn azərbaycan, türk, rus və ya ingilis dilində və səhv yazılmış ola bilər.\nMətn: """${q}"""\nDƏQİQ FORMAT:\nTR: <tərcümə>\nOXU: <Azərbaycan hərfləri ilə oxunuş>\nMƏNA: <qısa geri tərcümə az>`,
+      onText: x => { const d = (x.match(/TR:\s*([^\n]*)/) || [])[1]; if (d) out.innerHTML = `<div class="card mt"><div class="de">${esc(d)}</div></div>`; } });
+    const g = re => { const m = t.match(re); return m ? m[1].trim() : ""; }; const tt = g(/TR:\s*([^\n]*)/);
+    if (!tt) throw { code: "x" };
+    show(tt, g(/OXU:\s*([^\n]*)/), g(/MƏNA:\s*([^\n]*)/));
   } catch (err) { out.innerHTML = `<div class="card mt">${esc(aiErr(err))}</div>`; }
 };
+$$("#trLang .chip").forEach(b => b.onclick = () => setTrLang(b.dataset.l));
+setTimeout(() => setTrLang(trLang), 0);
 $$("#trMode button").forEach(b => b.onclick = () => { $$("#trMode button").forEach(x => x.classList.toggle("on", x === b)); $("#trSay").hidden = b.dataset.m !== "say"; $("#trListen").hidden = b.dataset.m !== "listen"; });
-let lsTarget = LS.get("lsTarget", "az"), lsSeq = 0, lsLast = "", lsTimer = 0, rec = null;
+let lsSrc = LS.get("lsSrc", "de"), lsTarget = LS.get("lsTarget", "az"), lsSeq = 0, lsLast = "", lsTimer = 0, rec = null;
 $$("#lsTarget .chip").forEach(b => { b.classList.toggle("on", b.dataset.l === lsTarget); b.onclick = () => { lsTarget = b.dataset.l; LS.set("lsTarget", lsTarget); $$("#lsTarget .chip").forEach(x => x.classList.toggle("on", x === b)); lsLast = ""; listenTr(); }; });
+$$("#lsSrc .chip").forEach(b => { b.classList.toggle("on", b.dataset.l === lsSrc); b.onclick = () => { lsSrc = b.dataset.l; LS.set("lsSrc", lsSrc); $$("#lsSrc .chip").forEach(x => x.classList.toggle("on", x === b)); $("#lsIn").placeholder = (lsSrc === "en" ? "İngiliscə" : "Almanca") + " mətn bura yazılacaq (əl ilə də yaza bilərsən)"; if (rec) rec.stop(); lsLast = ""; listenTr(); }; });
 $("#lsIn").addEventListener("input", () => { clearTimeout(lsTimer); lsTimer = setTimeout(listenTr, 1100); });
 async function listenTr() {
   const src = $("#lsIn").value.trim(); if (!src || src === lsLast) return; lsLast = src;
   const out = $("#lsOut"); out.hidden = false; const my = ++lsSeq;
   try {
-    const t = await freeTr(src, "de", lsTarget === "tr" ? "tr" : "az");
+    const t = await freeTr(src, lsSrc, lsTarget === "tr" ? "tr" : "az");
     if (my === lsSeq) { out.innerHTML = `<div class="story">${esc(t)}</div><button class="btn s mt" id="lsSay">🔊 Dinlə</button>`; $("#lsSay").onclick = () => speak(t, lsTarget === "tr" ? "tr" : "az"); }
     return;
   } catch (e0) { if (S.ai === false) { if (my === lsSeq) out.textContent = aiErr(e0); return; } }
   try {
-    const t = await ai({ mode: "listen", tier: "fast", max_tokens: 400, prompt: `Bu, Vyanada kiminsə dediyi sözlərdir (almanca, Avstriya dialekti, danışıq tanıma səhvləri ola bilər). Təbii ${lsTarget === "tr" ? "türk" : "Azərbaycan"} dilinə tərcümə et. Yalnız tərcüməni yaz.\nMətn: """${src}"""`,
+    const t = await ai({ mode: "listen", tier: "fast", max_tokens: 400, prompt: `Bu, Vyanada kiminsə dediyi sözlərdir (${lsSrc === "en" ? "ingiliscə" : "almanca, Avstriya dialekti"}, danışıq tanıma səhvləri ola bilər). Təbii ${lsTarget === "tr" ? "türk" : "Azərbaycan"} dilinə tərcümə et. Yalnız tərcüməni yaz.\nMətn: """${src}"""`,
       onText: x => { if (my === lsSeq) out.innerHTML = `<div class="story">${esc(x)}</div>`; } });
     if (my === lsSeq) { out.innerHTML = `<div class="story">${esc(t)}</div><button class="btn s mt" id="lsSay">🔊 Dinlə</button>`; $("#lsSay").onclick = () => speak(t, lsTarget === "tr" ? "tr" : "az"); }
   } catch (e) { if (my === lsSeq) out.textContent = aiErr(e); }
@@ -714,10 +738,10 @@ async function listenTr() {
 $("#lsMic").onclick = () => {
   if (!SR) return alertBox("🎤 Səs tanıma", "Bu brauzerdə yoxdur. Safari-də aç və ya klaviaturada 🌐 ilə Deutsch seçib 🎤 bas.");
   if (rec) { rec.stop(); return; }
-  rec = new SR(); rec.lang = "de-AT"; rec.interimResults = true; rec.continuous = true;
+  rec = new SR(); rec.lang = lsSrc === "en" ? "en-GB" : "de-AT"; rec.interimResults = true; rec.continuous = true;
   const base = $("#lsIn").value ? $("#lsIn").value + " " : "";
   rec.onresult = e => { let t = ""; for (const r of e.results) t += r[0].transcript; $("#lsIn").value = base + t; clearTimeout(lsTimer); lsTimer = setTimeout(listenTr, e.results[e.results.length - 1].isFinal ? 100 : 1100); };
-  rec.onerror = e => { if (e.error === "language-not-supported" && rec.lang !== "de-DE") { rec.lang = "de-DE"; } else if (e.error === "not-allowed") alertBox("🎤 Mikrofon", "Mikrofona icazə ver: Ayarlar → Safari → Mikrofon."); };
+  rec.onerror = e => { if (e.error === "language-not-supported" && rec.lang !== "de-DE" && rec.lang !== "en-US") { rec.lang = lsSrc === "en" ? "en-US" : "de-DE"; } else if (e.error === "not-allowed") alertBox("🎤 Mikrofon", "Mikrofona icazə ver: Ayarlar → Safari → Mikrofon."); };
   rec.onend = () => { rec = null; $("#lsMic").classList.remove("on"); $("#lsHint").textContent = "Bas və telefonu danışan adama tut"; };
   try { rec.start(); $("#lsMic").classList.add("on"); $("#lsHint").textContent = "Dinləyirəm… dayandırmaq üçün yenə bas"; } catch (e) { rec = null; }
 };
@@ -1059,7 +1083,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "18";
+const APPV = "19";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
