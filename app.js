@@ -638,9 +638,39 @@ $("#prHist").onclick = priceHistory;
 
 /* ---------- speech ---------- */
 let speaking = false;
-function stopSpeak() { try { speechSynthesis.cancel(); } catch (e) {} speaking = false; $$("#spk").forEach(b => b.textContent = "🔊 Dinlə"); }
+/* speech: MP3 from the server played like music (works even when the iPhone is on silent); device voice as fallback */
+const SILENT = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NwwAAAAAAAAAAAAEluZm8AAAAPAAAABAAAAlgAenp6enp6enp6enp6enp6enp6enp6enp6pqampqampqampqampqampqampqampqamptPT09PT09PT09PT09PT09PT09PT09PT09P/////////////////////////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQCcQAAAAAAAAJY+/rsqgAAAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NCxKMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+const player = new Audio(); player.preload = "auto"; player.setAttribute("playsinline", ""); window.__player = player;
+const ttsCache = new Map(); let spkSeq = 0, unlocked = false;
+const audioMode = t => { try { if (navigator.audioSession) navigator.audioSession.type = t; } catch (e) {} };
+// iPhone only lets a page play sound after a tap: "unlock" the player on the first touch
+function unlockAudio() { if (unlocked) return; unlocked = true; try { player.src = SILENT; const p = player.play(); if (p && p.catch) p.catch(() => { unlocked = false; }); } catch (e) { unlocked = false; } }
+["touchend", "click"].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+function stopSpeak() { spkSeq++; try { speechSynthesis.cancel(); } catch (e) {} try { player.pause(); } catch (e) {} speaking = false; $$("#spk").forEach(b => b.textContent = "🔊 Dinlə"); }
+async function ttsUrl(text, lang) {
+  const key = lang + "|" + text; if (ttsCache.has(key)) return ttsCache.get(key);
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ k: S.code, u: S.u, op: "tts", q: text, tl: lang }), signal: ctl.signal });
+    if (!r.ok || !/audio/.test(r.headers.get("content-type") || "")) throw 0;
+    const url = URL.createObjectURL(await r.blob()); ttsCache.set(key, url); return url;
+  } finally { clearTimeout(tm); }
+}
 function speak(text, lang) {
-  stopSpeak(); if (!text || !window.speechSynthesis) return;
+  stopSpeak(); text = String(text || "").trim(); if (!text) return; lang = lang || "az";
+  audioMode("playback"); unlockAudio();
+  const my = ++spkSeq; speaking = true; $$("#spk").forEach(b => b.textContent = "⏹ Dayan");
+  const done = () => { if (my === spkSeq) { speaking = false; $$("#spk").forEach(b => b.textContent = "🔊 Dinlə"); } };
+  const fallback = () => { if (my === spkSeq) speakDevice(text, lang); };
+  if (!navigator.onLine) return fallback();
+  ttsUrl(text, lang).then(url => {
+    if (my !== spkSeq) return;
+    player.onended = done; player.onerror = fallback;
+    player.src = url; const p = player.play(); if (p && p.catch) p.catch(fallback);
+  }).catch(fallback);
+}
+function speakDevice(text, lang) {
+  if (!text || !window.speechSynthesis) { stopSpeak(); return; }
   const vs = speechSynthesis.getVoices();
   const v = lang === "en" ? (vs.find(x => /^en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang))) : lang === "de" ? vs.find(x => /^de/i.test(x.lang)) : lang === "tr" ? vs.find(x => /^tr/i.test(x.lang)) : (vs.find(x => /^az/i.test(x.lang)) || vs.find(x => /^tr/i.test(x.lang)));
   const parts = text.match(/[^.!?\n]+[.!?]*/g) || [text]; speaking = true; $$("#spk").forEach(b => b.textContent = "⏹ Dayan");
@@ -738,7 +768,7 @@ async function listenTr() {
 $("#lsMic").onclick = () => {
   if (!SR) return alertBox("🎤 Səs tanıma", "Bu brauzerdə yoxdur. Safari-də aç və ya klaviaturada 🌐 ilə Deutsch seçib 🎤 bas.");
   if (rec) { rec.stop(); return; }
-  rec = new SR(); rec.lang = lsSrc === "en" ? "en-GB" : "de-AT"; rec.interimResults = true; rec.continuous = true;
+  stopSpeak(); audioMode("auto"); rec = new SR(); rec.lang = lsSrc === "en" ? "en-GB" : "de-AT"; rec.interimResults = true; rec.continuous = true;
   const base = $("#lsIn").value ? $("#lsIn").value + " " : "";
   rec.onresult = e => { let t = ""; for (const r of e.results) t += r[0].transcript; $("#lsIn").value = base + t; clearTimeout(lsTimer); lsTimer = setTimeout(listenTr, e.results[e.results.length - 1].isFinal ? 100 : 1100); };
   rec.onerror = e => { if (e.error === "language-not-supported" && rec.lang !== "de-DE" && rec.lang !== "en-US") { rec.lang = lsSrc === "en" ? "en-US" : "de-DE"; } else if (e.error === "not-allowed") alertBox("🎤 Mikrofon", "Mikrofona icazə ver: Ayarlar → Safari → Mikrofon."); };
@@ -1083,7 +1113,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "20";
+const APPV = "21";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {

@@ -278,7 +278,7 @@ const INFO_HTML=`<div class="info">
 <li><b>Reytinqlər:</b> Google-dan götürülüb. “Google” düyməsi Google Maps-da rəyləri açır.</li>
 <li><b>Xəbərlər:</b> 17–20 noyabr hər səhər nümayiş, bağlanma və hava yoxlanılıb bura əlavə olunur.</li>
 <li><b>Xərclər:</b> hər üç nəfər üçün ortaqdır, balans avtomatik hesablanır.</li>
-<li><b>Səs:</b> almanca və ya ingiliscə dinləmək üçün Tərcümə → “Onlar deyir” → dili seç → 🎤.</li></ul></div>
+<li><b>Səs:</b> almanca və ya ingiliscə dinləmək üçün Tərcümə → “Onlar deyir” → dili seç → 🎤.</li><li><b>🔊 Səsləndirmə</b> telefon səssiz rejimdə olsa da işləyir — sadəcə yan düymələrlə səsi artır.</li></ul></div>
 <div class="note" style="text-align:center">Qiymət və iş saatları dəyişə bilər. Gedəndən əvvəl rəsmi saytda yoxla.</div>
 </div>`;
 

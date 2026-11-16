@@ -51,26 +51,6 @@ Deno.serve(async (req) => {
     if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
     return json(await briefMsg(String(b.date)));
   }
-  if (b && b.op === "dbg.search") {
-    if (!b.cron || b.cron !== (await cfg("cron_secret"))) return json({ error: "forbidden" }, 403);
-    const model = String(b.model || "gemini-3.8-flash"), q = String(b.q || "adidas Samba OG B75806 fiyat");
-    const variants: Record<string, any> = {
-      snake: { tools: [{ google_search: {} }] },
-      camel: { tools: [{ googleSearch: {} }] },
-      snake_nothink: { tools: [{ google_search: {} }], noThink: true },
-    };
-    const out: Record<string, unknown> = {};
-    for (const [name, v] of Object.entries(variants)) {
-      const body: any = { contents: [{ role: "user", parts: [{ text: q }] }], tools: v.tools };
-      if (!v.noThink) body.generationConfig = { thinkingConfig: { thinkingLevel: "low" } };
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body) });
-      const t = await r.text();
-      let j: any = {}; try { j = JSON.parse(t); } catch { /* */ }
-      const c = j.candidates?.[0] ?? {};
-      out[name] = { status: r.status, keys: Object.keys(c), gm: c.groundingMetadata ? Object.keys(c.groundingMetadata) : null, q: c.groundingMetadata?.webSearchQueries, n: (c.groundingMetadata?.groundingChunks ?? []).length, usage: j.usageMetadata, text: (c.content?.parts ?? []).map((p: any) => p.text || "").join("").slice(0, 300), err: r.ok ? undefined : t.slice(0, 400) };
-    }
-    return json(out);
-  }
   const code = await cfg("trip_code");
   if (!b || !code || b.k !== code) return json({ error: "forbidden" }, 403);
   // personal link → identity (server decides who you are; admin can act as anyone for testing)
@@ -285,6 +265,7 @@ Deno.serve(async (req) => {
         return json({ sent: n });
       }
 
+      case "tts": return await freeTts(b);
       case "gt": return await freeTranslate(b);
       case "ai": return await aiText(b);
       case "price.extract": return await priceExtract(b);
@@ -359,6 +340,31 @@ async function pushTick() {
     await sb.from("bookings").update({ sent: true }).eq("id", bk.id);
   }
   return { ok: true, sent };
+}
+
+// free text-to-speech as an MP3 file: the app plays it like music, so it is heard even when the iPhone is on silent
+async function freeTts(b: any): Promise<Response> {
+  let tl = String(b.tl ?? "de"); if (!["de", "en", "tr", "az"].includes(tl)) tl = "de";
+  let q = String(b.q ?? "").replace(/\s+/g, " ").trim().slice(0, 1500);
+  if (!q) return json({ error: "invalid" }, 400);
+  if (tl === "az") { tl = "tr"; q = q.replace(/ə/g, "e").replace(/Ə/g, "E").replace(/x/g, "h").replace(/X/g, "H").replace(/q/g, "g").replace(/Q/g, "G"); } // Google has no Azerbaijani voice; Turkish reads it closely
+  const chunks: string[] = [];
+  for (const sent of q.match(/[^.!?;:]+[.!?;:]*/g) ?? [q]) {
+    let s = sent.trim(); if (!s) continue;
+    while (s.length > 190) { let cut = s.lastIndexOf(" ", 190); if (cut < 60) cut = 190; chunks.push(s.slice(0, cut)); s = s.slice(cut).trim(); }
+    const last = chunks[chunks.length - 1];
+    if (last && last.length + s.length + 1 <= 190) chunks[chunks.length - 1] = last + " " + s; else chunks.push(s);
+  }
+  try {
+    const parts = await Promise.all(chunks.slice(0, 12).map(async (c, i) => {
+      const r = await fetch(`https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${tl}&total=${chunks.length}&idx=${i}&textlen=${c.length}&q=${encodeURIComponent(c)}`, { headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", referer: "https://translate.google.com/" } });
+      if (!r.ok || !(r.headers.get("content-type") ?? "").includes("audio")) throw new Error("tts " + r.status);
+      return new Uint8Array(await r.arrayBuffer());
+    }));
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    return new Response(out, { headers: { ...CORS, "content-type": "audio/mpeg", "cache-control": "private, max-age=86400" } });
+  } catch { return json({ error: "upstream" }, 502); }
 }
 
 async function freeTranslate(b: any): Promise<Response> {
