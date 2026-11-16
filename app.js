@@ -558,6 +558,7 @@ async function priceSearch(fresh) {
   try {
     const j = await api("price.search", { product: p, who: ME || "", thumb: prCur.thumb, fresh: !!fresh });
     renderPrice(p, j.result || {}, j.cached);
+    if (j.result && j.result.grounded !== false) { const mine = (LS.get("myPrices", []) || []).filter(x => Date.now() - x.ts < RECENT_MS); mine.unshift({ ts: Date.now(), who: ME || "", brand: p.brand, name: p.name_az || p.model, code: p.code, vienna_eur: p.vienna_eur, result: j.result, thumb: prCur.thumb }); LS.set("myPrices", mine.slice(0, 40)); recentPrices(); }
   } catch (e) {
     $("#prB").innerHTML = `<div class="note" style="color:#B23A2B;margin-top:0">⚠️ ${esc(aiErr(e))}</div>${priceLinks(p)}<button class="btn wide mt" id="pfBack">✏️ Düzəlt</button>`;
     $("#pfBack").onclick = () => priceForm("");
@@ -620,6 +621,36 @@ function renderPrice(p, res, cached) {
   $("#prEdit").onclick = () => { prCur = prCur || { p }; priceForm(""); };
   $("#prFresh").onclick = () => { prCur = prCur || { p, thumb: null }; prCur.p = p; priceSearch(true); };
   if ($("#prAdd")) $("#prAdd").onclick = () => { if (ME) { expUI.mode = "mine"; LS.set("expMode", "mine"); expBuilt = false; } goView("exp"); setTimeout(() => { $("#expA").value = String(v).replace(".", ","); setExpCur("EUR"); $("#expD").value = name.slice(0, 80); $("#expA").dispatchEvent(new Event("input")); }, 60); };
+}
+// 🕒 products checked in the last 72 hours (own by default; "Hamının" shows the friends' too)
+const RECENT_MS = 72 * 3600000;
+let recentAll = false, recentSrv = null;
+const priceKey = x => ((x.brand || "") + "|" + (x.code || x.name || "")).toLowerCase();
+function histRow(x, i) {
+  const r = R(), sr = sane(x.result), bb = bestOf(sr.baku), bt = bestOf(sr.turkey), h = Math.max(1, Math.round((Date.now() - x.ts) / 3600000));
+  return `<li class="hist" data-rh="${i}">${x.thumb ? `<img src="${x.thumb}" alt="">` : `<img alt="">`}<div class="grow"><b>${esc([x.brand, x.name].filter(Boolean).join(" · ") || "Məhsul")}</b><span class="s2">${x.vienna_eur ? "🇦🇹 " + fm(+x.vienna_eur) + " € · " : ""}${bb ? "🇦🇿 " + fm(bb.price, 0) + " ₼ · " : ""}${bt ? "🇹🇷 ≈" + fm(toAzn(bt, r), 0) + " ₼" : ""}</span><span class="s2 dim">${recentAll && x.who && x.who !== ME ? esc(x.who) + " · " : ""}${h < 24 ? h + " saat əvvəl" : Math.round(h / 24) + " gün əvvəl"}</span></div><span class="dim">›</span></li>`;
+}
+function openHist(x) {
+  const p = { brand: x.brand, model: x.name, code: x.code, vienna_eur: x.vienna_eur };
+  prCur = { img: null, thumb: x.thumb, p };
+  showResult(`${x.thumb ? `<img class="photo" src="${x.thumb}" alt="" style="max-height:200px;object-fit:contain">` : ""}<div class="ttl"><h2 id="prT"></h2></div><div class="card" id="prB"></div>`);
+  renderPrice(p, x.result || {}, true);
+}
+async function recentPrices(refresh) {
+  const box = $("#prRecent"); if (!box) return;
+  const now = Date.now(), local = (LS.get("myPrices", []) || []).filter(x => now - x.ts < RECENT_MS);
+  const draw = () => {
+    const seen = new Set();
+    const list = local.concat(recentSrv || []).filter(x => x && x.ts && now - x.ts < RECENT_MS && x.result && (recentAll || !ME || x.who === ME))
+      .sort((a, b) => b.ts - a.ts).filter(x => { const k = priceKey(x); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 15);
+    if (!list.length && !recentAll) { box.innerHTML = ""; return; }
+    box.innerHTML = `<div class="card mt"><div class="row" style="align-items:center"><b class="grow">🕒 Son yoxladıqlarım <span class="dim sm">· 72 saat</span></b><button class="chip ${recentAll ? "on" : ""}" id="rcAll">👭 Hamının</button></div>
+      ${list.length ? `<ul class="list">${list.map(histRow).join("")}</ul>` : `<div class="mute sm mt">Son 72 saatda heç nə yoxlanmayıb.</div>`}</div>`;
+    $("#rcAll").onclick = () => { recentAll = !recentAll; draw(); };
+    box.querySelectorAll("[data-rh]").forEach(li => li.onclick = () => openHist(list[+li.dataset.rh]));
+  };
+  draw();
+  if (refresh || recentSrv == null) { try { recentSrv = ((await api("prices")).prices || []).map(x => Object.assign({}, x, { ts: +x.ts })); draw(); } catch (e) {} }
 }
 async function priceHistory() {
   showResult(`<div class="ttl"><h2>🧾 Baxılan qiymətlər</h2></div><div class="card" id="phB"><span class="spin"></span></div>`);
@@ -855,12 +886,41 @@ async function markPaid(x) {
   renderExpData();
 }
 function setExpCur(c) { expUI.cur = c; $$("#expCur button").forEach(x => x.classList.toggle("on", x.dataset.c === c)); }
+// 🧾 receipt photo → total, place, category filled in automatically (cheap AI vision, ~1 cent)
+async function readReceipt(file, upd) {
+  const out = $("#rcOut"); out.innerHTML = `<div class="note" style="margin-top:0"><span class="spin"></span> Çek oxunur…</div>`;
+  let img; try { img = await shrink(file, 1600, .85); } catch (e) { out.innerHTML = `<div class="note">Şəkli aça bilmədim.</div>`; return; }
+  let t = "";
+  try {
+    t = await ai({ mode: "receipt", tier: "vision", max_tokens: 900, image: img.b64, prompt: `Bu, Vyanada (Avstriya) çekin/qəbzin şəklidir. Çekdən oxu və YALNIZ JSON yaz:
+{"store":"<mağaza/restoran adı>","total":<ödənilən YEKUN məbləğ rəqəm, endirim və bahşiş daxil — 'Summe/Gesamt/Total/Zu zahlen' sətri>,"currency":"EUR","kind":"<food|cafe|shop|ticket|transport|other>","items":[{"n":"<məhsul adı, qısa>","q":<say>,"p":<sətir məbləği>}],"date":"<YYYY-MM-DD və ya boş>"}
+Qaydalar: rəqəmləri nöqtə ilə yaz (12.50). Görünməyən şeyi uydurma. Çek deyilsə {"total":null} yaz.` });
+  } catch (e) { out.innerHTML = `<div class="note" style="color:#B23A2B">⚠️ ${esc(aiErr(e))} Məbləği əl ilə yaz.</div>`; return; }
+  let j = null; try { j = JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)); } catch (e) {}
+  const total = j && Number(j.total);
+  if (!(total > 0)) { out.innerHTML = `<div class="note">Çeki oxuya bilmədim — şəkli düz, işıqlı yerdə yenidən çək və ya məbləği əl ilə yaz.</div>`; return; }
+  const cur = String(j.currency || "EUR").toUpperCase() === "AZN" ? "AZN" : "EUR";
+  setExpCur(cur); $("#expA").value = String(Math.round(total * 100) / 100).replace(".", ",");
+  if (j.store) $("#expD").value = String(j.store).slice(0, 60);
+  const want = { food: "🍽 Yemək", cafe: "☕ Kafe", shop: expUI.mode === "mine" ? "🛍 Digər" : "🛍 Alış-veriş", ticket: "🎟 Bilet", transport: "🚇 Nəqliyyat" }[j.kind];
+  const chip = want && [...$$("#expCats .chip")].find(c => c.dataset.cat === want);
+  if (chip && !chip.classList.contains("on")) chip.click();
+  upd();
+  const items = Array.isArray(j.items) ? j.items.filter(x => x && x.n).slice(0, 25) : [];
+  const sum = items.reduce((a, x) => a + (Number(x.p) || 0), 0);
+  out.innerHTML = `<div class="note" style="margin-top:0"><b>✓ Çek oxundu: ${esc(j.store || "")} — ${fm(total)} ${cur === "EUR" ? "€" : "₼"}</b>
+    ${items.length ? `<ul class="list" style="margin:6px 0 0">${items.map(x => `<li style="padding:4px 0"><span class="grow">${x.q > 1 ? x.q + "× " : ""}${esc(x.n)}</span><span class="dim">${Number(x.p) ? fm(+x.p) : ""}</span></li>`).join("")}</ul>` : ""}
+    ${items.length && Math.abs(sum - total) > 0.05 && sum > 0 ? `<div class="sm dim mt">Sətirlərin cəmi ${fm(sum)} — yekun fərqlidir (bahşiş/endirim ola bilər). Lazımsa məbləği düzəlt.</div>` : ""}
+    <div class="sm mt">Kim ödədi, kimlər üçün — seç və <b>“Əlavə et”</b> bas. Bərabər bölünəcək.</div></div>`;
+}
 function renderExp(force) {
   if (!expBuilt || force) {
     expBuilt = true; expUI.payer = ME || expUI.payer;
     $("#expBody").innerHTML = `<div class="seg mt" id="expMode"><button data-m="shared">👭 Ortaq</button><button data-m="mine">👤 Mənim xərclərim</button></div><div id="expSync"></div>
     <div id="budgetBox"></div>
     <form class="card" id="expF" autocomplete="off">
+      <button type="button" class="btn wide" id="rcBtn" style="margin-bottom:10px">🧾 Çekin şəklini çək — özü yazılsın</button><input type="file" accept="image/*" capture="environment" id="rcIn" hidden>
+      <div id="rcOut"></div>
       <div class="conv"><div class="in"><input id="expA" inputmode="decimal" placeholder="Məbləğ"></div><div class="seg" id="expCur" style="flex:none"><button type="button" data-c="EUR" class="on">€</button><button type="button" data-c="AZN">₼</button></div></div>
       <div class="sm dim" id="expConv" style="margin-top:4px;min-height:18px"></div>
       <div class="hscroll" id="expCats"></div>
@@ -878,6 +938,8 @@ function renderExp(force) {
     const upd = () => { const v = toNum($("#expA").value), r = R(), eur = expUI.cur === "EUR" ? v : v / r.azn;
       $("#expConv").textContent = v ? (expUI.cur === "EUR" ? `≈ ${fm(v * r.azn)} ₼` : `≈ ${fm(v / r.azn)} €`) + (eur >= TF_MIN ? ` · 🧾 75 €-dan çox: kassada “Tax free, bitte” de — ≈ ${fm(tfBack(eur))} € geri` : "") : ""; };
     $("#expTf").onclick = () => { expUI.tf = !expUI.tf; $("#expTf").classList.toggle("on", expUI.tf); };
+    $("#rcBtn").onclick = () => $("#rcIn").click();
+    $("#rcIn").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) readReceipt(f, upd); };
     $("#expA").oninput = upd;
     $$("#expCur button").forEach(b => b.onclick = () => { setExpCur(b.dataset.c); upd(); });
     const drawCats = () => { const cs = expUI.mode === "mine" ? PCATS : CATS; $("#expCats").innerHTML = cs.map(c => `<button type="button" class="chip ${expUI.cat === c ? "on" : ""}" data-cat="${c}">${c}</button>`).join("");
@@ -894,7 +956,7 @@ function renderExp(force) {
       e.preventDefault(); const v = toNum($("#expA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
       const r = R(), mine = expUI.mode === "mine";
       const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: mine ? ME : expUI.payer, parts: mine ? [ME] : expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf, priv: mine, cat: expUI.cat || null };
-      $("#expA").value = ""; $("#expD").value = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
+      $("#expA").value = ""; $("#expD").value = ""; $("#rcOut").innerHTML = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
       try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); }
       catch (err) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
       renderExpData();
@@ -1217,7 +1279,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "23";
+const APPV = "24";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1473,7 +1535,7 @@ $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), p
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome());
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome()); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
   setInterval(() => { if (!document.hidden && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
