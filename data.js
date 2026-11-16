@@ -30,7 +30,7 @@ const P = [
  ["hundertwasser","Hundertwasserhaus","tarix",48.2072,16.3943,"Rəssam Hundertvasserin rəngli, əyri xətli və damında ağaclar olan yaşayış binası. Xaricdən baxılır, pulsuzdur."],
  ["kunsthaus","Kunsthaus Wien","muzey",48.2108,16.3929,"Hundertvasserin muzeyi. Döşəməsi belə dalğalıdır."],
  ["peterskirche","Peterskirche","kilse",48.2093,16.3698,"Qrabenin yanındakı yaşıl gümbəzli kiçik barokko kilsə. Daxili qızılla bəzədilib."],
- ["graben","Graben və Taun sütunu","tarix",48.2086,16.3697,"Əsas piyada küçəsi. Ortasındakı barokko sütun 1679-cu il taun epidemiyasının xatirəsinə ucaldılıb."],
+ ["graben","Taun sütunu (Pestsäule) və Graben","tarix",48.2086,16.3697,"Əsas piyada küçəsi. Ortasındakı barokko sütun 1679-cu il taun epidemiyasının xatirəsinə ucaldılıb."],
  ["kohlmarkt","Kohlmarkt","tarix",48.2087,16.3675,"Lüks mağazalar küçəsi. Sonunda Hofburgun Mixaeler darvazası görünür."],
  ["amhof","Am Hof meydanı","tarix",48.2108,16.3683,"Şəhər mərkəzinin ən böyük meydanı. Babenberqlərin ilk sarayı burada olub."],
  ["freyung","Freyung meydanı","tarix",48.2121,16.3655,"Şotland monastırının qarşısındakı tarixi meydan. Adı “sığınacaq azadlığı” mənasını verir."],
@@ -73,7 +73,8 @@ const P = [
  ["xm-karlsplatz","Art Advent – Karlsplatz","bazar",48.1992,16.3713,"Sənət və əl işləri bazarı Karlskirche-nin qarşısında. 13.11–23.12, hər gün 12:00–20:00."],
  ["xm-spittelberg","Milad bazarı – Spittelberg","bazar",48.2032,16.3551,"Dar köhnə küçələrdə ən romantik bazar: əl işləri, ekoloji məhsullar. 13.11–23.12."],
  // shopping
- ["shop-kaerntner","Kärntner Straße və Graben","shop",48.2052,16.3712,"Mərkəzin əsas alış-veriş küçəsi: Zara, H&M, Mango, Swarovski, Steffl univermağı. Otelə ~15 dəq piyada və ya taksi ilə 5 dəq."],
+ ["shop-kaerntner","Kärntner Straße","shop",48.2052,16.3712,"Mərkəzin əsas alış-veriş küçəsi: Zara, H&M, Mango, Swarovski, Steffl univermağı. Otelə ~15 dəq piyada və ya taksi ilə 5 dəq."],
+ ["shop-graben","Graben mağazaları (Taun sütunu ətrafı)","shop",48.2087,16.3704,"Taun sütununun (Pestsäule) ətrafındakı piyada küçəsi: Louis Vuitton, Chanel, Hermès, Longchamp, Tommy Hilfiger, Omega, Tag Heuer, Longines saatları və məşhur Julius Meinl am Graben delikatesi. Stephansdomdan 2 dəq, U1/U3 Stephansplatz."],
  ["shop-goldenes","Goldenes Quartier və Kohlmarkt","shop",48.2101,16.3679,"Lüks markalar küçəsi: Louis Vuitton, Prada, Saint Laurent, Miu Miu, Chanel və s."],
  ["shop-wienmitte","The Mall – Wien Mitte","shop",48.2063,16.3845,"Wien Mitte vağzalında ticarət mərkəzi. Yağışlı gün üçün rahatdır; CAT avtobusu da buradan gedir."],
  ["shop-mahue","Mariahilfer Straße","shop",48.1988,16.3527,"Vyananın ən uzun alış-veriş küçəsi: Zara, Massimo Dutti, Nike, Peek & Cloppenburg, Gerngross. U3 Neubaugasse."],
@@ -363,6 +364,7 @@ const SHOP_TIPS = [
   "🕘 Mağazalar adətən 10:00–19:00/20:00 açıqdır, şənbə 18:00-dək, <b>bazar günü bağlıdır</b>. Səfər çərşənbə axşamı–cümədir — hamısı açıq olacaq.",
   "🧾 Bir mağazada bir çekdə <b>75,01 €-dan çox</b> alsan “Tax free, bitte” de — ~12–14% geri alırsan. Parndorf-da bütün markalar tax-free-dir.",
   "🛍 Almadan əvvəl “🛍 Qiymət” ilə Bakı və Türkiyə qiymətini yoxla.",
+  "📍 <b>Graben (Taun sütunu ətrafı)</b>: Louis Vuitton, Chanel, Hermès, Longchamp, Tommy Hilfiger, saat mağazaları. Buradan Kohlmarkt (lüks) və Kärntner Straße (Zara, H&M, Mango) başlayır — üçü bir-birinə bitişikdir.",
   "🌧 Yağışlı gündə: The Mall Wien Mitte və ya Donau Zentrum (U1 ilə birbaşa — Schwedenplatz otelə 5 dəqiqədir).",
 ];
 const PARNDORF = { url: "https://www.mcarthurglen.com/en/outlets/at/designer-outlet-parndorf/plan-your-visit/", hrs: "B.e.–Cümə 9:00–21:00, Şənbə 9:00–18:00", shuttle: "Operanın qarşısından shuttle avtobus (onlayn bilet). Həftəiçi Vyanadan təxminən 9:30, 10:30, 11:30, 13:30; geri 16:00–20:00 arası. Dəqiq cədvəli saytda yoxla.", tip: "Yarım günlük plan lazımdır. 18 və ya 19 noyabr uyğundur." };

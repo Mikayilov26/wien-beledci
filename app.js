@@ -931,7 +931,7 @@ let map = null, mapReady = false, selPoi = null, lastRoute = null;
 const MK = { poi: [], me: null, hotel: null, fr: [] };
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 const CEMO = { tarix: "🏛", muzey: "🖼", yemek: "🍽", bazar: "🎄", kilse: "⛪", park: "🌳", shop: "🛍", metro: "Ⓜ" };
-const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
+const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-graben", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
 S.filter = null; // null = today's plan only; "all" = everything; otherwise one category
 const ML = () => window.maplibregl;
 const fc = f => ({ type: "FeatureCollection", features: f });
@@ -1217,7 +1217,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "22";
+const APPV = "23";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
