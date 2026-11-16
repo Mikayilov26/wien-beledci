@@ -132,7 +132,7 @@ const goodFood = p => p.cat!=="yemek" || (p.g||0)>=MIN_RATING;
 
 const PLAN = [
  {d:"2026-11-17",t:"17 noyabr",w:"Çərşənbə axşamı",title:"Gəliş və Köhnə şəhər",items:[
-  ["11:00","Vyana hava limanına eniş","Pasport nəzarəti və baqaj üçün təxminən 45–60 dəqiqə ayır.",null,1],
+  ["11:00","Vyana hava limanına eniş","Bakıdan 09:30-da (Bakı vaxtı) uçursunuz. Vyana Bakıdan 3 saat geridir — telefon saatı özü dəyişəcək. Pasport nəzarəti və baqaj üçün 45–60 dəqiqə ayır.",null,1],
   ["12:00","CAT avtobusu → Wien Mitte","Avtobus terminalı Terminal 3-ün qarşısındadır. Hər 12 dəqiqədən bir gedir, yol təxminən 21 dəqiqədir, bilet adambaşı 14,90 €. Ucuz variant: Railjet qatarı ilə Hauptbahnhof-a.","u-landstrasse",1],
   ["12:30","Wien Mitte → Hotel Stefanie (taksi ~7 dəq)","Taborstraße 12. Çamadanla ən rahatı taksidir. Alternativ: U4 Landstraße → Schwedenplatz (2 dayanacaq) + 5 dəq piyada.","hotel"],
   ["13:00","Otelə çantaları qoy","Check-in 15:00-dandır. Otelin 24 saat resepsiyası var — çantaları resepsiyada saxlatmağı xahiş edin.","hotel"],
@@ -176,7 +176,7 @@ const PLAN = [
   ["09:10","CAT avtobusu ilə hava limanına","Hər 12 dəqiqədən bir gedir, yol təxminən 21–25 dəqiqədir. Tıxac ehtimalına görə bu avtobusdan gecikmə.","u-landstrasse",1],
   ["09:40","Hava limanı → Terminal 1","Avtobus Terminal 3-ün qarşısında saxlayır. Terminal 1-ə piyada 5–10 dəqiqədir.",null],
   ["10:00","Terminal 1: qeydiyyat və pasport nəzarəti","Şengendən çıxışda növbə ola bilər. Tax Free qaytarırsansa, əlavə 20 dəqiqə ayır.",null,1],
-  ["12:00","Uçuş","Yaxşı yol!",null,1],
+  ["12:00","Uçuş → Bakı","Bakıya 19:05-də (Bakı vaxtı) enirsiniz. Yaxşı yol!",null,1],
  ]},
 ];
 
@@ -400,7 +400,7 @@ const HELP = [
   ["🗣 Tərcümə", `<ul><li>Yuxarıda dili seç: <b>🇩🇪 Almanca</b> və ya <b>🇬🇧 İngiliscə</b>. Hazır ifadələr və tərcümə seçilən dildə olur.</li><li><b>Mən deyirəm</b>: azərbaycanca yaz (səhv yazsan da tapır) → tərcümə + oxunuşu. <b>🔊</b> səsləndirir, <b>⛶</b> ekranı satıcıya göstər.</li><li><b>Onlar deyir</b>: danışanın dilini seç (almanca/ingiliscə), <b>🎤</b> bas, telefonu danışan adama tut — azərbaycanca və ya türkcə tərcümə çıxır.</li></ul>`],
   ["💶 Xərclər", `<ul><li><b>👭 Ortaq</b>: məbləğ → kim ödədi → kimlər üçün → Əlavə et. Hamı eyni siyahını görür, kim kimə borcludur avtomatik hesablanır. Borc qaytarılanda <b>✓ Ödəndi</b> bas.</li><li><b>👤 Mənim xərclərim</b> 🔒: paltar, kosmetika kimi şəxsi xərclər; yalnız sən görürsən.</li><li><b>🎯 Büdcə</b>: öz büdcəni yaz, nə qədər qaldığını görürsən.</li><li>Səhv yazsan <b>✎</b> ilə düzəlt. İnternet olmasa da yaz — sonra özü göndərir.</li><li>75 €-dan çox alanda kassada <b>“Tax free, bitte”</b> de və <b>🧾 Tax-free</b> işarələ.</li></ul>`],
   ["🗓 Plan bölməsi", `<ul><li><b>Plan</b>: hər günün proqramı, rezervlər də burada görünür; axşam günün xülasəsi.</li><li><b>Otel</b>: ünvan, zəng, check-in/check-out, taksi kartı.</li><li><b>Albom</b>: hamının şəkilləri. <b>Hazırlıq</b>: çanta siyahısı.</li><li><b>Məlumat</b>: bilet saytları, internetsiz iş, təcili nömrələr, tax-free, hava limanı.</li></ul>`],
-  ["⚠️ Vacib", `<ul><li><b>20 noyabr</b>: 08:40-da oteldən taksi ilə Wien Mitte → CAT avtobusu. Uçuş 12:00, <b>Terminal 1</b>.</li><li><b>Tax-free</b> çekləri: hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə möhürlət.</li><li>Təcili yardım: <b>112</b>. Otel: Hotel Stefanie, Taborstraße 12.</li><li>Kartla ödəyəndə terminal soruşsa, <b>avro (EUR)</b> seç.</li></ul>`],
+  ["⚠️ Vacib", `<ul><li><b>20 noyabr</b>: 08:40-da oteldən taksi ilə Wien Mitte → CAT avtobusu. Uçuş 12:00 (Vyana vaxtı), <b>Terminal 1</b> → Bakıya 19:05.</li><li><b>Tax-free</b> çekləri: hava limanında <b>qeydiyyatdan ƏVVƏL</b> gömrükdə möhürlət.</li><li>Təcili yardım: <b>112</b>. Otel: Hotel Stefanie, Taborstraße 12.</li><li>Kartla ödəyəndə terminal soruşsa, <b>avro (EUR)</b> seç.</li></ul>`],
   ["🔧 Problem olsa", `<ul><li>Tətbiqi tam bağla və yenidən aç — yeni versiya özü yüklənir.</li><li>“Link işləmir” yazsa: Kənanın göndərdiyi şəxsi linki yenidən aç.</li><li>Yer görünmürsə: Ayarlar → Məxfilik → Məkan xidmətləri → Safari → “İstifadə zamanı”.</li></ul>`],
 ];
 // English versions of PHR (same order): [English, Azerbaijani-letter pronunciation]

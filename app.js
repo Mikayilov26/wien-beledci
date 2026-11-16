@@ -224,7 +224,7 @@ const CTX = () => {
   const al = todaysAlerts().filter(a => a.level !== "info").map(a => a.title + ": " + a.detail).join(" | ");
   return `Kontekst: 3 azərbaycanlı xanım (Fidan, Sədaqət, Kəmalə) 17–20 noyabr 2026 Vyanadadır. İndi Vyanada ${n.date}, saat ${n.time}.` +
     (day ? ` Bu günün planı: ${day.items.map(i => i[0] + " " + i[1]).join("; ")}.` : "") + (al ? ` Xəbərdarlıqlar: ${al}.` : "") +
-    ` Dönüş uçuşu 20 noyabr 12:00, Terminal 1. Hava limanına CAT qatarı yox, Wien Mitte-dən CAT avtobusu gedir. Donuz əti olan yeməkləri qeyd et. Sadə Azərbaycan dilində yaz, markdown istifadə etmə.`;
+    ` Gediş: 17 noyabr Bakıdan 09:30 (Bakı vaxtı), Vyanaya 11:00 (Vyana vaxtı). Dönüş uçuşu 20 noyabr 12:00 (Vyana vaxtı), Terminal 1, Bakıya 19:05 (Bakı vaxtı). Hava limanına CAT qatarı yox, Wien Mitte-dən CAT avtobusu gedir. Donuz əti olan yeməkləri qeyd et. Sadə Azərbaycan dilində yaz, markdown istifadə etmə.`;
 };
 const todaysAlerts = () => { const d = vNow().date; return (S.live.alerts || []).filter(a => a.date === "all" || a.date === d); };
 
@@ -331,9 +331,9 @@ function renderHome() {
     nx = next ? `<div class="sm dim">Sıradakı · ${day.t}</div><div class="next" style="margin-top:6px"><span class="t">${next[0]}</span><div class="grow"><b>${esc(next[1])}</b><span class="s2">${esc(next[2])}</span></div>${next[3] ? `<button class="btn s pri" data-route="${next[3]}">Get</button>` : ""}</div>`
       : `<div class="sm dim">${day.t}</div><b>Bugünkü plan bitdi 🌙</b>`;
   } else {
-    const left = Math.max(0, Math.round((Date.parse("2026-11-17T11:00:00+01:00") - Date.now()) / 60000)), dd = Math.floor(left / 1440), hh = Math.floor(left % 1440 / 60);
+    const left = Math.max(0, Math.round((Date.parse("2026-11-17T09:30:00+04:00") - Date.now()) / 60000)), dd = Math.floor(left / 1440), hh = Math.floor(left % 1440 / 60);
     const pk = packDone();
-    nx = now.date < "2026-11-17" ? `<div class="sm dim">Səfərə qalıb</div><div class="cd"><b>${dd}</b><span>gün</span><b>${hh}</b><span>saat</span></div><b>17 noyabr, 11:00 — Vyanaya eniş ✈️</b><span class="s2">Dönüş: 20 noyabr, 12:00, Terminal 1</span>
+    nx = now.date < "2026-11-17" ? `<div class="sm dim">Uçuşa qalıb</div><div class="cd"><b>${dd}</b><span>gün</span><b>${hh}</b><span>saat</span></div><b>17 noyabr: Bakıdan 09:30 ✈️ → Vyana 11:00</b><span class="s2">Bakı hava limanında ən gec 07:00-da olun · Dönüş: 20 noyabr, Vyana 12:00 (Terminal 1) → Bakı 19:05</span>
       <button class="btn wide mt" id="packGo">🧳 Hazırlıq siyahısı · ${pk.n}/${pk.t} ✓</button>` : `<b>Xoş səfər idi! 💛</b>`;
   }
   $("#nextCard").innerHTML = nx;
@@ -990,7 +990,7 @@ function renderPlan() {
   const d = PLAN[planDay]; const today = d.d === now.date; const nextIdx = today ? d.items.findIndex(i => i[0] >= now.time) : -1;
   $("#planBody").innerHTML = `<h2 style="font-size:23px">${esc(d.title)}</h2><div class="sm dim" style="margin-bottom:10px">${d.t}, ${d.w}</div>
    <div class="card"><ul class="tl">${d.items.map((it, k) => { const p = it[3] ? byId[it[3]] : null; return `<li class="${k === nextIdx ? "now" : ""}"><div class="t">${it[0]}</div><div class="x2"><b>${esc(it[1])}</b><span>${esc(it[2])}</span>${p ? `<div style="margin-top:6px"><a class="lnk" data-route="${p.id}">🧭 Get</a><a class="lnk" data-tell="${p.id}">🔊 Hekayə</a>${p.pid ? `<a class="lnk" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}</div>` : ""}</div></li>`; }).join("")}</ul></div>
-   ${planDay === 3 ? `<div class="alert mt"><span>✈️</span><div><b>Uçuş 12:00, Terminal 1</b><span class="mute">10:00-da hava limanında ol. CAT avtobusu Wien Mitte (Marxergasse 1b). Wien Mitte S-Bahn bağlıdır, U3/U4 işləyir.</span></div></div>` : ""}`;
+   ${planDay === 3 ? `<div class="alert mt"><span>✈️</span><div><b>Uçuş 12:00 (Vyana vaxtı), Terminal 1 → Bakı 19:05</b><span class="mute">10:00-da hava limanında ol. CAT avtobusu Wien Mitte (Marxergasse 1b). Wien Mitte S-Bahn bağlıdır, U3/U4 işləyir.</span></div></div>` : ""}`;
   if (d.d <= now.date) { $("#planBody").insertAdjacentHTML("beforeend", summaryHTML(d.d, d.d === now.date ? "📊 Bu gün indiyədək" : "📊 Günün xülasəsi")); $$("#planBody [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share)); }
   const bks = (typeof BOOK !== "undefined" ? BOOK : []).filter(b => vDate(b.at) === d.d);
   if (bks.length) $("#planBody .card").insertAdjacentHTML("afterbegin", `<div class="sm dim" style="font-weight:700">🎟 Rezervlər</div><ul class="tl" style="margin-bottom:8px">${bks.map(b => `<li><div class="t">${hhmm(b.at)}</div><div class="x2"><b>${esc(b.title)}</b><span>${esc(b.place || "")}${b.note ? " · " + esc(b.note) : ""}</span></div></li>`).join("")}</ul>`);
@@ -1083,7 +1083,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "19";
+const APPV = "20";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
