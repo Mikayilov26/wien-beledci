@@ -167,7 +167,7 @@ function onFix(p) {
   // ignore a much worse fix right after a good one (iOS sometimes mixes in cell-tower positions)
   if (S.me && S.me.src === "gps" && S.me.acc && acc > Math.max(150, S.me.acc * 4) && Date.now() - S.me.ts < 45000) return;
   if (!setMe(c.latitude, c.longitude, "gps", acc)) return;
-  if (!gpsCentered && map && !S.dest && $("#v-map").classList.contains("on")) { gpsCentered = true; map.setView([c.latitude, c.longitude], Math.max(map.getZoom(), 16)); }
+  if (!gpsCentered && map && !S.dest && $("#v-map").classList.contains("on")) { gpsCentered = true; mapGo(c.latitude, c.longitude, Math.max(map.getZoom(), 15.5)); }
   if (acc > 600 && !roughWarned) { roughWarned = true; setTimeout(() => { if (S.me && S.me.acc > 600) toast("📍 Yer təxminidir (±" + Math.round(S.me.acc) + " m). iPhone: Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “Dəqiq məkan” aç", 7000); }, 20000); }
 }
 function onGpsErr(e) {
@@ -187,7 +187,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && S.
 $("#locChip").onclick = () => {
   if (S.gps === "denied") return alertBox("📍 GPS icazəsi bağlıdır", "iPhone: <b>Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “İstifadə zamanı”</b>. Sonra səhifəni yenilə.");
   if (S.gps !== "on") startGPS();
-  goView("map"); if (S.me && map) map.setView([S.me.lat, S.me.lng], 16);
+  goView("map"); if (S.me && map) mapGo(S.me.lat, S.me.lng, 16);
 };
 function alertBox(title, html) { $("#bigBox").innerHTML = `<h3 style="font-size:20px">${title}</h3><p class="mute" style="text-align:left">${html}</p><button class="btn pri wide" id="bbX">Oldu</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on"); }
 
@@ -926,51 +926,155 @@ function renderExpData() {
   bindDel();
 }
 
-/* ---------- map (Leaflet) ---------- */
-let map = null, poiLayer = null, meLayer = null, routeLayer = null, alertLayer = null, hotelLayer = null, frLayer = null;
+/* ---------- map (MapLibre + OpenFreeMap: free, clean Google-like vector map, no key) ---------- */
+let map = null, mapReady = false, selPoi = null, lastRoute = null;
+const MK = { poi: [], me: null, hotel: null, fr: [] };
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const CEMO = { tarix: "🏛", muzey: "🖼", yemek: "🍽", bazar: "🎄", kilse: "⛪", park: "🌳", shop: "🛍", metro: "Ⓜ" };
 const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
+S.filter = null; // null = today's plan only; "all" = everything; otherwise one category
+const ML = () => window.maplibregl;
+const fc = f => ({ type: "FeatureCollection", features: f });
+const meHere = () => S.me && S.me.src === "gps" && inVienna(S.me.lat, S.me.lng);
+function mapGo(lat, lng, z) { if (map) map.easeTo({ center: [lng, lat], zoom: z == null ? map.getZoom() : z, duration: 600 }); }
+function circlePoly(lat, lng, r, n = 48) { const pts = []; for (let i = 0; i <= n; i++) { const a = i / n * 2 * Math.PI; pts.push([lng + r / (111320 * Math.cos(lat * Math.PI / 180)) * Math.cos(a), lat + r / 110540 * Math.sin(a)]); } return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [pts] } }; }
+function setSrc(id, data) { if (!map || !mapReady) return; const s = map.getSource(id); if (s) s.setData(data); }
+function addMk(el, lng, lat, anchor) { return new (ML().Marker)({ element: el, anchor: anchor || "center" }).setLngLat([lng, lat]).addTo(map); }
+function fitTo(pts, maxZ) {
+  if (!map || !pts.length) return;
+  if (pts.length === 1) return mapGo(pts[0].lat, pts[0].lng, maxZ || 16);
+  const b = new (ML().LngLatBounds)(); pts.forEach(p => b.extend([p.lng, p.lat]));
+  map.fitBounds(b, { padding: { top: 90, bottom: 120, left: 40, right: 70 }, maxZoom: maxZ || 16.5, duration: 600 });
+}
 function initMap() {
-  if (map || !window.L) { if (!window.L) $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; return; }
-  map = L.map("map", { zoomControl: false, attributionControl: true, preferCanvas: true, renderer: L.canvas ? L.canvas({ padding: 0.5, tolerance: 14 }) : undefined, tapTolerance: 20 }).setView(S.me ? [S.me.lat, S.me.lng] : [48.2075, 16.3705], 15);
-  // map background: OpenStreetMap; if it fails repeatedly, switch to the OSM Germany mirror automatically
-  const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: OSM_ATTR });
-  tiles.addTo(map);
-  let tErr = 0, tOk = 0, swapped = false;
-  if (tiles.on) tiles.on("tileload", () => tOk++);
-  if (tiles.on) tiles.on("tileerror", () => { if (++tErr >= 6 && tOk < 3 && !swapped && tiles.setUrl) { swapped = true; tiles.setUrl("https://tile.openstreetmap.de/{z}/{x}/{y}.png"); } });
-  poiLayer = L.layerGroup().addTo(map); alertLayer = L.layerGroup().addTo(map); hotelLayer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map); frLayer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
-  drawPOI(); mapAlerts(); mapHotel(); mapFriends(); mapMe();
-  map.on("zoomend", drawPOI);
+  if (map) return;
+  const fail = () => { map = null; $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; };
+  if (!ML()) return fail();
+  const c = meHere() ? S.me : (S.hotel || { lat: 48.2085, lng: 16.3745 });
+  try {
+    map = new (ML().Map)({ container: "map", style: MAP_STYLE, center: [c.lng, c.lat], zoom: meHere() ? 15.5 : 14.5, minZoom: 10, maxZoom: 19, dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: { compact: true } });
+  } catch (e) { return fail(); }
+  window.__map = map;
+  try { map.touchZoomRotate.disableRotation(); } catch (e) {}
+  map.on("load", () => {
+    mapReady = true;
+    // the base map has its own shop/restaurant icons: hide them so only our pins show (keep metro/train stations)
+    try { (map.getStyle().layers || []).forEach(l => { if (/^poi/.test(l.id) && !/transit|rail|station|subway/.test(l.id)) map.setLayoutProperty(l.id, "visibility", "none"); }); } catch (e) {}
+    const src = id => map.addSource(id, { type: "geojson", data: fc([]) });
+    src("alerts"); src("meacc"); src("route");
+    map.addLayer({ id: "alerts", type: "fill", source: "alerts", paint: { "fill-color": "#C8102E", "fill-opacity": 0.13 } });
+    map.addLayer({ id: "alerts-line", type: "line", source: "alerts", paint: { "line-color": "#C8102E", "line-width": 2, "line-dasharray": [3, 2] } });
+    map.addLayer({ id: "meacc", type: "fill", source: "meacc", paint: { "fill-color": "#2F6FB5", "fill-opacity": 0.1 } });
+    map.addLayer({ id: "route", type: "line", source: "route", filter: ["!=", ["get", "d"], 1], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#C8102E", "line-width": 6, "line-opacity": 0.85 } });
+    map.addLayer({ id: "route-d", type: "line", source: "route", filter: ["==", ["get", "d"], 1], layout: { "line-cap": "round" }, paint: { "line-color": "#C8102E", "line-width": 5, "line-dasharray": [0.5, 2] } });
+    mapAlerts(); mapMe(); if (lastRoute) drawRoute(lastRoute.line, lastRoute.real, false);
+  });
+  map.on("moveend", drawPOI);
+  map.on("click", () => { if (selPoi) { selPoi = null; drawPOI(); } });
+  map.on("error", () => {}); // offline tiles: keep the pins working
+  drawPOI(); renderNear(); mapHotel(); mapFriends(); mapMe(); mapAlerts();
+  if (!meHere() && S.filter == null) setTimeout(() => fitTo(planStops().concat(S.hotel ? [S.hotel] : [])), 50);
+}
+// today's plan stops (before the trip: day 1), numbered in order
+function planStops() {
+  const now = vNow(); let day = PLAN.find(d => d.d === now.date); if (!day && now.date < PLAN[0].d) day = PLAN[0]; if (!day) return [];
+  const seen = new Set(), out = [];
+  day.items.forEach(it => { const id = it[3]; if (!id || id === "hotel" || /^u-/.test(id) || seen.has(id) || !byId[id]) return; seen.add(id); out.push(Object.assign({}, byId[id], { _n: out.length + 1, _t: it[0] })); });
+  return out;
+}
+function visiblePois() { return S.filter == null ? planStops() : POI.filter(p => S.filter === "all" ? p.cat !== "metro" : p.cat === S.filter); }
+function pinEl(p, num, lbl) {
+  const el = document.createElement("div");
+  el.className = "pin" + (selPoi === p.id ? " sel" : "") + (p.g && p.g < MIN_R ? " low" : "");
+  el.dataset.id = p.id; el.style.setProperty("--c", CAT[p.cat] ? CAT[p.cat].c : "#888");
+  el.innerHTML = `<b><i>${num != null ? num : (CEMO[p.cat] || "•")}</i></b>${lbl ? `<span class="pl">${esc(short(p.name))}</span>` : ""}`;
+  el.addEventListener("click", ev => { ev.stopPropagation(); selectPoi(p.id); });
+  return el;
 }
 function drawPOI() {
-  if (!map) return; poiLayer.clearLayers(); const z = map.getZoom();
-  POI.forEach(p => {
-    if (S.filter !== "all" && p.cat !== S.filter) return;
-    if (p.cat === "metro" && S.filter !== "metro" && z < 16) return;
-    const low = p.g && p.g < MIN_R;
-    const m = L.circleMarker([p.lat, p.lng], { radius: p.cat === "metro" ? 6 : 9, color: "#fff", weight: 2, fillColor: CAT[p.cat].c, fillOpacity: low ? .45 : 1 }).addTo(poiLayer);
-    m.on("click", (e) => { if (e && e.originalEvent && L.DomEvent) L.DomEvent.stop(e.originalEvent); openPoi(p); });
-    if ((MAJOR.has(p.id) && z >= 14) || z >= 17 || (S.filter !== "all" && z >= 15)) {
-      m.bindTooltip(short(p.name) + (p.g ? ` ★${p.g}` : ""), { permanent: true, direction: "right", offset: [8, 0], className: "lbl", interactive: true });
-      const tt = m.getTooltip && m.getTooltip(); if (tt && tt.on) tt.on("click", () => openPoi(p));
+  if (!map) return;
+  MK.poi.forEach(m => m.remove()); MK.poi = [];
+  const list = visiblePois(), z = map.getZoom(), plan = S.filter == null;
+  // group pins that would overlap on screen into one numbered bubble (Google-style clustering)
+  const groups = [];
+  if (!plan && z < 16.5 && list.length > 6) {
+    const cell = 52, g = new Map();
+    list.forEach(p => { const pt = map.project([p.lng, p.lat]), k = Math.floor(pt.x / cell) + ":" + Math.floor(pt.y / cell); if (!g.has(k)) g.set(k, []); g.get(k).push(p); });
+    g.forEach(v => groups.push(v));
+  } else list.forEach(p => groups.push([p]));
+  groups.forEach(gr => {
+    if (gr.length === 1 || gr.some(p => p.id === selPoi)) {
+      gr.forEach(p => MK.poi.push(addMk(pinEl(p, plan ? p._n : null, plan || z >= 16 || p.id === selPoi), p.lng, p.lat, "bottom")));
+      return;
     }
+    const lat = gr.reduce((a, p) => a + p.lat, 0) / gr.length, lng = gr.reduce((a, p) => a + p.lng, 0) / gr.length;
+    const el = document.createElement("div"); el.className = "clu"; el.textContent = gr.length;
+    const cats = new Set(gr.map(p => p.cat)); el.style.setProperty("--c", cats.size === 1 ? CAT[gr[0].cat].c : "#3B3631");
+    el.addEventListener("click", ev => { ev.stopPropagation(); fitTo(gr, 18); });
+    MK.poi.push(addMk(el, lng, lat, "center"));
   });
 }
-function mapMe() { if (!map || !meLayer) return; meLayer.clearLayers(); if (!S.me) return;
-  if (S.me.acc && S.me.acc < 300) L.circle([S.me.lat, S.me.lng], { radius: S.me.acc, color: "#2F6FB5", weight: 1, fillOpacity: .08 }).addTo(meLayer);
-  L.marker([S.me.lat, S.me.lng], { icon: L.divIcon({ className: "", html: '<div class="medot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false }).addTo(meLayer); }
-function mapAlerts() { if (!map || !alertLayer) return; alertLayer.clearLayers(); todaysAlerts().filter(a => a.lat && a.level !== "info").forEach(a => L.circle([a.lat, a.lng], { radius: a.r || 300, color: "#C8102E", weight: 2, dashArray: "6 4", fillOpacity: .12 }).bindTooltip("⚠ " + a.title).addTo(alertLayer)); }
-function mapHotel() { if (!map || !hotelLayer) return; hotelLayer.clearLayers(); if (S.hotel) L.marker([S.hotel.lat, S.hotel.lng], { icon: L.divIcon({ className: "", html: '<div style="font-size:26px">🏨</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) }).on("click", () => routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "Otelimiz" })).addTo(hotelLayer); }
-function mapFriends() { if (!map || !frLayer) return; frLayer.clearLayers(); friendsList().forEach(f => L.marker([f.lat, f.lng], { icon: L.divIcon({ className: "", html: `<div class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</div>`, iconSize: null, iconAnchor: [12, 12] }) }).on("click", () => groupSheet()).addTo(frLayer)); }
-const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["shop", "🛍 Mağaza"], ["metro", "Ⓜ Metro"]];
-$("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("");
-$$("#filters .chip").forEach(b => b.onclick = () => { S.filter = b.dataset.f; $$("#filters .chip").forEach(x => x.classList.toggle("on", x === b)); drawPOI(); });
+function selectPoi(id, fly) {
+  const p = byId[id]; if (!p) return; selPoi = id; drawPOI();
+  if (fly && map) mapGo(p.lat, p.lng, Math.max(map.getZoom(), 16));
+  openPoi(p);
+}
+// bottom cards: today's plan, or the nearest places of the chosen category
+function renderNear() {
+  const box = $("#nearBar"); if (!box) return;
+  const ref = meHere() ? S.me : (map ? (c => ({ lat: c.lat, lng: c.lng }))(map.getCenter()) : S.hotel);
+  let cards;
+  if (S.filter == null) {
+    const st = planStops(); const today = PLAN.some(d => d.d === vNow().date);
+    cards = st.length ? `<div class="nc lbl0">📅 ${today ? "Bugünkü plan" : "17 noyabr planı"}<span>kateqoriya seç ↑</span></div>` + st.map(p => `<button class="nc" data-p="${p.id}"><b><em style="background:${CAT[p.cat].c}">${p._n}</em>${esc(short(p.name))}</b><span>${p._t}${ref ? " · " + fmtKm(walkM(dist(ref, p))) : ""}</span></button>`).join("") : "";
+  } else {
+    const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d).slice(0, 10);
+    cards = l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq" : ""}</span></button>`).join("");
+  }
+  box.innerHTML = cards; box.hidden = !cards; box.scrollLeft = 0;
+  box.querySelectorAll("[data-p]").forEach(b => b.onclick = () => selectPoi(b.dataset.p, true));
+}
+function setFilter(f) {
+  S.filter = S.filter === f ? null : f; selPoi = null;
+  $$("#filters .chip").forEach(x => x.classList.toggle("on", x.dataset.f === S.filter));
+  $("#sheet").classList.remove("on");
+  drawPOI(); renderNear();
+  if (!map) return;
+  if (S.filter == null) return fitTo(planStops().concat(meHere() ? [S.me] : []));
+  const ref = meHere() ? S.me : map.getCenter();
+  const near = visiblePois().map(p => ({ p, d: dist(ref, p) })).sort((a, b) => a.d - b.d).slice(0, S.filter === "all" ? 25 : 8).map(x => x.p);
+  fitTo(near.concat(meHere() ? [S.me] : []));
+}
+function mapMe() {
+  if (!map) return; if (MK.me) { MK.me.remove(); MK.me = null; }
+  setSrc("meacc", fc(S.me && S.me.acc && S.me.acc < 300 ? [circlePoly(S.me.lat, S.me.lng, S.me.acc)] : []));
+  if (!S.me) return; const el = document.createElement("div"); el.className = "medot"; el.style.pointerEvents = "none";
+  MK.me = addMk(el, S.me.lng, S.me.lat, "center");
+}
+function mapAlerts() { if (map) setSrc("alerts", fc(todaysAlerts().filter(a => a.lat && a.level !== "info").map(a => circlePoly(a.lat, a.lng, a.r || 300)))); }
+function mapHotel() {
+  if (!map) return; if (MK.hotel) { MK.hotel.remove(); MK.hotel = null; } if (!S.hotel) return;
+  const el = document.createElement("div"); el.className = "hpin"; el.textContent = "🏨";
+  el.addEventListener("click", ev => { ev.stopPropagation(); routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "Otelimiz" }); });
+  MK.hotel = addMk(el, S.hotel.lng, S.hotel.lat, "center");
+}
+function mapFriends() {
+  if (!map) return; MK.fr.forEach(m => m.remove()); MK.fr = [];
+  friendsList().forEach(f => { const el = document.createElement("div"); el.className = "friend"; el.innerHTML = `<i>${esc(f.n[0])}</i>${esc(f.n)}`; el.addEventListener("click", ev => { ev.stopPropagation(); groupSheet(); }); MK.fr.push(addMk(el, f.lng, f.lat, "left")); });
+}
+function drawRoute(line, real, fit = true) {
+  lastRoute = { line, real }; if (!map) return;
+  setSrc("route", fc([{ type: "Feature", properties: { d: real ? 0 : 1 }, geometry: { type: "LineString", coordinates: line.map(c => [c.lng, c.lat]) } }]));
+  if (fit) { const b = new (ML().LngLatBounds)(); line.forEach(c => b.extend([c.lng, c.lat])); map.fitBounds(b, { padding: { top: 80, bottom: Math.round(innerHeight * 0.5), left: 40, right: 60 }, maxZoom: 17, duration: 600 }); }
+}
+const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["shop", "🛍 Mağaza"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["metro", "Ⓜ Metro"]];
+$("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip" data-f="${k}">${t}</button>`).join("");
+$$("#filters .chip").forEach(b => b.onclick = () => setFilter(b.dataset.f));
 $("#grpBtn").classList.toggle("on", !!S.share);
 $("#grpBtn").onclick = groupSheet;
 $("#hotBtn").onclick = () => { routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
-$("#meBtn").onclick = () => { if (S.gps !== "on" && S.gps !== "denied") startGPS(); if (S.me && map) map.setView([S.me.lat, S.me.lng], 17); else $("#locChip").click(); };
-$("#sheetX").onclick = () => $("#sheet").classList.remove("on");
+$("#meBtn").onclick = () => { if (S.gps !== "on" && S.gps !== "denied") startGPS(); if (S.me && map) mapGo(S.me.lat, S.me.lng, 17); else $("#locChip").click(); };
+$("#sheetX").onclick = () => { $("#sheet").classList.remove("on"); if (selPoi) { selPoi = null; drawPOI(); } };
 function openPoi(p) {
   const d = S.me ? dist(S.me, p) : null, an = alertNear(p);
   $("#sheetBody").innerHTML = `<h3 style="font-size:21px;margin-right:36px">${esc(p.name)}</h3><div>${rating(p)} ${pills(p)}</div>
@@ -995,7 +1099,7 @@ async function routeTo(p) {
     const r = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${from.lng},${from.lat};${p.lng},${p.lat}?overview=full&geometries=geojson`, { signal: ctl.signal });
     const j = await r.json(); if (j.routes && j.routes[0]) { line = j.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] })); meters = Math.round(j.routes[0].distance); mins = Math.max(1, Math.round(meters / 75)); real = true; }
   } catch (e) {}
-  if (map) { routeLayer.clearLayers(); L.polyline(line.map(c => [c.lat, c.lng]), { color: "#C8102E", weight: 6, opacity: .85, dashArray: real ? null : "4 10" }).addTo(routeLayer); map.fitBounds(L.latLngBounds(line.map(c => [c.lat, c.lng])).pad(.25), { paddingBottomRight: [0, 260] }); }
+  drawRoute(line, real);
   const along = POI.filter(x => x.id !== p.id && dist(x, from) > 60 && dist(x, p) > 60 && okFood(x) && lineOff(line, x) < 120).map(x => ({ x, d: dist(from, x) })).sort((a, b) => a.d - b.d).slice(0, 10);
   const blocks = todaysAlerts().filter(a => a.lat && a.level !== "info" && lineOff(line, a) <= (a.r || 300));
   const far = meters > 2200, cats = c => along.filter(a => a.x.cat === c).length;
@@ -1102,7 +1206,7 @@ async function renderAlbum(B) {
 function goView(v) {
   $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   $$(".view").forEach(x => x.classList.toggle("on", x.id === "v-" + v));
-  if (v === "map") { initMap(); setTimeout(() => map && map.invalidateSize(), 50); }
+  if (v === "map") { initMap(); setTimeout(() => { if (map) { map.resize(); renderNear(); } }, 50); }
   if (v === "tr") renderPhr();
   if (v === "exp") { renderExp(); sync(); }
   if (v === "plan") renderMore();
@@ -1113,7 +1217,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "21";
+const APPV = "22";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
