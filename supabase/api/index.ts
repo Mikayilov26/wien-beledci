@@ -302,14 +302,17 @@ async function briefMsg(date: string) {
   const br = BRIEF[date]; if (!br) return null;
   const { data: kv } = await sb.from("kv").select("value").eq("key", "live").maybeSingle();
   const live: any = kv?.value ?? {};
-  const wx = (live.weather ?? [])[0];
-  const alerts = (live.alerts ?? []).filter((a: any) => (a.date === date || a.date === "all") && a.level !== "info");
+  // that day's weather (weather[].day is like "17 noy"), else the first entry
+  const dd = String(+date.slice(8, 10)) + " ";
+  const wx = (live.weather ?? []).find((w: any) => String(w.day ?? "").startsWith(dd)) ?? (live.weather ?? [])[0];
+  // everything special for that day (info too); trip-wide notes only when they are warnings
+  const alerts = (live.alerts ?? []).filter((a: any) => a.date === date || (a.date === "all" && a.level === "warn"));
   const dayStart = new Date(`${date}T00:00:00+01:00`).toISOString(), dayEnd = new Date(`${date}T23:59:59+01:00`).toISOString();
-  const { data: bks } = await sb.from("bookings").select("title,at,shared").eq("shared", true).gte("at", dayStart).lte("at", dayEnd).order("at");
+  const { data: bks } = await sb.from("bookings").select("title,at,shared").eq("shared", true).gte("at", new Date(Math.max(Date.now(), Date.parse(dayStart))).toISOString()).lte("at", dayEnd).order("at"); // only what is still ahead
   const hm = (iso: string) => vParts(new Date(iso).getTime()).time;
   const lines = [
     wx ? `🌦 ${wx.t}${wx.s ? ", " + wx.s : ""}` : "",
-    alerts.length ? `⚠️ ${alerts.map((a: any) => a.title).join("; ")}` : "✅ Yollarda problem yoxdur",
+    alerts.length ? `${alerts.some((a: any) => a.level === "warn") ? "⚠️" : "ℹ️"} ${alerts.map((a: any) => a.title).join("; ")}` : "✅ Yollarda problem yoxdur",
     `🗓 ${br.items.slice(0, 3).join(" · ")}`,
     (bks ?? []).length ? `🎟 ${(bks ?? []).map((x: any) => hm(x.at) + " " + x.title).join(" · ")}` : "",
   ].filter(Boolean);
