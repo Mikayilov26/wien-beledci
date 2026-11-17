@@ -64,8 +64,21 @@ Deno.serve(async (req) => {
   const k = keys();
   const aiStatus = { claude: !!k.claude, gemini: !!k.gemini };
 
+  // usage stats for the end-of-trip report: only who · which function · when (never any content)
+  const op = String(b.op ?? "");
+  if (who && !admin && !["sync", "ping", "use", "push.sub", "kv.set"].includes(op) || (who && !admin && op === "kv.set" && b.key === "prog"))
+    await sb.from("usage").insert({ who, ev: op === "kv.set" ? "op:prog" : "op:" + op.slice(0, 30) }).then(() => {}, () => {});
   try {
     switch (b.op) {
+      case "use": {
+        if (!who || admin) return json({ ok: true });
+        const now = Date.now();
+        const rows = (Array.isArray(b.ev) ? b.ev : []).slice(0, 60)
+          .filter((x: any) => x && /^[a-z0-9:._-]{1,40}$/.test(String(x.e)))
+          .map((x: any) => { const t = Number(x.t); return { who, ev: String(x.e), ts: new Date(t > now - 3 * 86400000 && t <= now + 60000 ? t : now).toISOString() }; });
+        if (rows.length) await sb.from("usage").insert(rows);
+        return json({ ok: true });
+      }
       case "ping": return json({ ok: true, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, who, admin });
 
       case "sync": {

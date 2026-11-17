@@ -511,6 +511,16 @@ function renderHome() {
   $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
+/* ---------- usage stats (who · which section · when — no content) for the end-of-trip report ---------- */
+const USEQ = LS.get("useq", []);
+function track(e) { if (ADMIN || !ME) return; USEQ.push({ e, t: Date.now() }); if (USEQ.length > 200) USEQ.splice(0, USEQ.length - 200); LS.set("useq", USEQ); }
+async function useFlush() {
+  if (ADMIN || !ME || !USEQ.length || !navigator.onLine) return;
+  const batch = USEQ.slice(0, 60);
+  try { await api("use", { ev: batch }); USEQ.splice(0, batch.length); LS.set("useq", USEQ); } catch (e) { /* retry later */ }
+}
+setInterval(() => { if (!document.hidden) { track("beat"); useFlush(); } }, 5 * 60000);
+document.addEventListener("visibilitychange", () => { if (document.hidden) useFlush(); else track("open"); });
 /* ---------- push health: every open re-checks the real subscription and re-registers it on the server ---------- */
 S.push = "unknown";
 let pushChecked = 0;
@@ -1401,7 +1411,7 @@ function renderPlan() {
   $$("#planBody [data-skip]").forEach(a => a.onclick = () => { toggleSkip(d.d, decodeURIComponent(a.dataset.skip)); renderPlan(); });
   $$("#planBody [data-tell]").forEach(a => a.onclick = () => tellAbout(byId[a.dataset.tell]));
 }
-$$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
+$$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; track("more:" + moreTab); $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
 function renderMore() {
   $$("#moreTabs button").forEach(x => x.classList.toggle("on", x.dataset.t === moreTab));
   const plan = moreTab === "plan"; $("#morePlan").hidden = !plan; $("#moreBody").hidden = plan;
@@ -1474,6 +1484,7 @@ async function renderAlbum(B) {
 
 /* ---------- navigation ---------- */
 function goView(v) {
+  track("view:" + v);
   $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   $$(".view").forEach(x => x.classList.toggle("on", x.id === "v-" + v));
   if (v === "map") { initMap(); setTimeout(() => { if (map) { map.resize(); renderNear(); } }, 50); }
@@ -1487,7 +1498,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "27";
+const APPV = "28";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1743,7 +1754,7 @@ $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), p
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); setTimeout(() => recentPrices(true), 600);
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); track("open"); setTimeout(useFlush, 5000); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
   setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
