@@ -791,10 +791,13 @@ async function priceSearch(fresh) {
 const okDom = (o, cc) => { let h = "", seg = ""; try { const u = new URL(o.url); h = u.hostname.replace(/^www\./, ""); seg = (u.pathname.split("/")[1] || "").toLowerCase(); } catch (e) { return true; } if (/vertexaisearch|google\./.test(h)) return true;
   if (new RegExp(`^(${cc}|[a-z]{2}[-_]${cc}|${cc}[-_][a-z]{2})$`).test(seg)) return true;
   if (h.startsWith(cc + ".")) return true; // tr.dior.com // zara.com/az, apple.com/az, hm.com/tr_tr
-  return cc === "az" ? /\.az$/.test(h) || /(^|\.)trendyol\.com$/.test(h) : /\.tr$/.test(h) || /(^|\.)(trendyol|hepsiburada|n11|beymen|gratis|cimri|akakce)\.com$/.test(h); };
+  return cc === "az" ? /\.az$/.test(h) : /\.tr$/.test(h) || /(^|\.)(trendyol|hepsiburada|n11|beymen|vakko|gratis|boyner|morhipo|lcwaikiki|koton|defacto|mavi|network|ipekyol|sephora)\.com$/.test(h); };
 const sane = res => Object.assign({}, res || {}, { baku: ((res || {}).baku || []).filter(o => okDom(o, "az")), turkey: ((res || {}).turkey || []).filter(o => okDom(o, "tr")) });
 const toAzn = (o, r) => o.currency === "TRY" ? o.price / r.try * r.azn : o.currency === "EUR" ? o.price * r.azn : o.price;
-const bestOf = arr => { const ex = (arr || []).filter(o => o.match === "exact"); const pool = ex.length ? ex : (arr || []); return pool.length ? pool.reduce((a, c) => a.price <= c.price ? a : c) : null; };
+// an offer counts only if it is the same article, not sold out, and (when the page could be opened) the price is really on it
+const liveOffer = o => o.stock !== "out" && o.check !== "price_missing" && o.check !== "gone";
+const bestOf = (arr, any) => { const ok = (arr || []).filter(o => liveOffer(o) && (any || o.match === "exact")); return ok.length ? ok.reduce((a, c) => a.price <= c.price ? a : c) : null; };
+const offerBadge = o => o.stock === "out" ? `<span class="tag" style="background:#FDECEA;color:#B23A2B">⛔ stokda yoxdur</span>` : o.check === "price_missing" ? `<span class="tag" style="background:#FFF4E0;color:#9A6200">⚠️ qiymət səhifədə görünmədi</span>` : o.check === "ok" ? `<span class="tag">✓ səhifədə yoxlandı</span>` : o.check === "blocked" ? `<span class="tag" style="background:#EEE;color:#666">sayt yoxlamağa icazə vermədi</span>` : "";
 function priceLinks(p) {
   const q = [p.brand, p.code || p.model].filter(Boolean).join(" ");
   const L = [[`https://www.google.com/search?q=${encodeURIComponent(q + " qiymət Bakı")}`, "Google AZ"], [`https://www.google.com/search?q=${encodeURIComponent(q + " fiyat")}`, "Google TR"], [`https://www.trendyol.com/sr?q=${encodeURIComponent(q)}`, "Trendyol"], [`https://umico.az/search?query=${encodeURIComponent(q)}`, "Umico"]];
@@ -811,12 +814,13 @@ function offerUrl(o, p) {
 }
 function offerList(arr, flag, r) {
   if (!arr || !arr.length) return "";
-  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => a.price - b.price).map(o => `<li><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar</span>` : `<span class="tag">eyni</span>`}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a> · <a class="sm dim" href="${esc(offerUrl({ store: o.store, url: (() => { try { return "https://" + new URL(o.url).hostname + "/"; } catch (e) { return ""; } })() }, prCur && prCur.p))}" target="_blank" rel="noopener">Google-da</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
+  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => (liveOffer(a) ? 0 : 1) - (liveOffer(b) ? 0 : 1) || a.price - b.price).map(o => `<li${liveOffer(o) ? "" : ` style="opacity:.55"`}><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar · fərqli variant</span>` : `<span class="tag">eyni</span>`} ${offerBadge(o)}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a> · <a class="sm dim" href="${esc(offerUrl({ store: o.store, url: (() => { try { return "https://" + new URL(o.url).hostname + "/"; } catch (e) { return ""; } })() }, prCur && prCur.p))}" target="_blank" rel="noopener">Google-da</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
 }
 function renderPrice(p, res, cached) {
   res = sane(res);
   const r = R(), v = +p.vienna_eur || null, tf = v ? tfBack(v) : 0, va = v ? (v - tf) * r.azn : null;
-  const bb = bestOf(res.baku), bt = bestOf(res.turkey);
+  // the comparison and the advice use only same-article, in-stock, checked offers; a similar model is shown but never decides
+  const bb = bestOf(res.baku), bt = bestOf(res.turkey), sb2 = bb ? null : bestOf(res.baku, true), st2 = bt ? null : bestOf(res.turkey, true);
   const ba = bb ? toAzn(bb, r) : null, ta = bt ? toAzn(bt, r) : null;
   const opts = [["vie", va], ["bak", ba], ["tr", ta]].filter(x => x[1]);
   const best = opts.length > 1 ? opts.reduce((a, c) => a[1] <= c[1] ? a : c)[0] : null;
@@ -829,15 +833,16 @@ function renderPrice(p, res, cached) {
   $("#prB").innerHTML = `${p.code ? `<div class="sm dim">Artikul: ${esc(p.code)}</div>` : ""}
    <div class="pbox">
     <div class="${best === "vie" ? "best" : ""}"><span>🇦🇹 Vyana</span><b>${v ? fm(v) + " €" : "—"}</b><span>${va ? "≈ " + fm(va) + " ₼" : "yazılmayıb"}</span>${tf ? `<span style="color:#2F6FB5">tax-free ilə</span>` : ""}</div>
-    <div class="${best === "bak" ? "best" : ""}"><span>🇦🇿 Bakı</span><b>${bb ? fm(bb.price, 0) + " ₼" : "—"}</b><span>${bb ? (bb.match === "similar" ? "oxşar məhsul" : esc(bb.store)) : "tapılmadı"}</span></div>
-    <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${bt ? fm(bt.price, 0) + " ₺" : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : "tapılmadı"}</span></div>
+    <div class="${best === "bak" ? "best" : ""}"><span>🇦🇿 Bakı</span><b>${bb ? fm(bb.price, 0) + " ₼" : sb2 ? `<span style="opacity:.6">${fm(sb2.price, 0)} ₼</span>` : "—"}</b><span>${bb ? esc(bb.store) : sb2 ? "yalnız oxşar variant" : "tapılmadı"}</span></div>
+    <div class="${best === "tr" ? "best" : ""}"><span>🇹🇷 Türkiyə</span><b>${bt ? fm(bt.price, 0) + " ₺" : st2 ? `<span style="opacity:.6">${fm(st2.price, 0)} ₺</span>` : "—"}</b><span>${ta ? "≈ " + fm(ta) + " ₼" : st2 ? "yalnız oxşar variant" : "tapılmadı"}</span></div>
    </div>
    ${save ? `<div class="settle mt">💡 <b>${esc(save)}</b></div>` : ""}
    ${res.grounded === false ? `<div class="note" style="color:#B23A2B">⚠️ Bu dəfə internet axtarışı alınmadı, ona görə qiymət göstərmirəm. “🔄 Təzədən” bas.</div>` : none ? `<div class="note">Bu məhsulun Bakı və Türkiyə qiyməti internetdə tapılmadı. Artikul kodunu yazıb yenidən yoxla və ya aşağıdakı linklərə bax.</div>` : ""}
    ${offerList(res.baku, "🇦🇿 Bakı mağazaları", r)}${offerList(res.turkey, "🇹🇷 Türkiyə mağazaları", r)}
    ${tf ? `<div class="note">🧾 75 €-dan çox olduğu üçün tax-free ilə ≈ ${fm(tf)} € geri ala bilərsən — müqayisə bunu nəzərə alır. Kassada “Tax free, bitte” de, pasportu göstər.</div>` : v && v < TF_MIN ? `<div class="note">🧾 Eyni mağazada bir çekdə 75,01 €-dan çox alsan, ≈12% ƏDV geri ala bilərsən.</div>` : ""}
    ${res.note ? `<div class="note">${esc(res.note)}</div>` : ""}
-   <div class="note">“eyni” — eyni artikul, “oxşar” — yaxın model. Qiymətlər ${cached ? "son 24 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
+   ${res.v !== 2 && (res.baku.length || res.turkey.length) ? `<div class="note" style="color:#B23A2B">⚠️ Bu köhnə üsulla edilmiş yoxlamadır, mağazalar yoxlanmayıb. Dəqiq nəticə üçün “🔄 Təzədən” bas.</div>` : ""}
+   <div class="note">“eyni” — eyni artikul, “oxşar” — başqa rəng/variant (müqayisəyə daxil edilmir). “✓ səhifədə yoxlandı” — mağaza səhifəsini açıb qiyməti və stoku yoxladım. Qiymətlər ${cached ? "son 24 saatda" : "indi"} internetdən götürülüb${res.at ? ` (${fmtT(res.at)})` : ""}; endirim və ölçüyə görə fərqlənə bilər.</div>
    ${priceLinks(p)}
    <div class="row mt"><button class="btn grow" id="prEdit">✏️ Düzəlt</button><button class="btn grow" id="prFresh">🔄 Təzədən</button></div>
    ${v ? `<button class="btn pri wide mt" id="prAdd">💶 Aldım — xərclərə yaz</button>` : ""}`;
@@ -1537,7 +1542,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "31";
+const APPV = "32";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });

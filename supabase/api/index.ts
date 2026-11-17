@@ -688,12 +688,11 @@ async function priceSearch(b: any): Promise<Response> {
   const brand = String(p.brand ?? "").slice(0, 60), model = String(p.model ?? "").slice(0, 100), code = String(p.code ?? "").slice(0, 60), ean = String(p.ean ?? "").slice(0, 20);
   const cat = String(p.category ?? "").slice(0, 30);
   if (!brand && !model && !code && !ean) return json({ error: "invalid" }, 400);
-  const key = norm(brand) + ":" + (norm(code) || norm(ean) || norm(model));
+  const key = "v2:" + norm(brand) + ":" + (norm(code) || norm(ean) || norm(model)); // v2 = verified results (older cached answers are simply not used any more)
 
-  // shared cache (12 h)
   if (!b.fresh) {
     const { data } = await sb.from("price_cache").select("result,provider,created_at").eq("key", key).maybeSingle();
-    if (data && Date.now() - new Date(data.created_at).getTime() < 24 * 3600_000) {
+    if (data && Date.now() - new Date(data.created_at).getTime() < 12 * 3600_000) {
       await logPrice(b, p, data.result);
       return json({ result: data.result, cached: true, provider: data.provider });
     }
@@ -703,61 +702,117 @@ async function priceSearch(b: any): Promise<Response> {
   if (!(await allow("price.search", String(b.who ?? ""), prov, true))) return json({ error: "rate_limited" }, 429);
 
   const ident = [brand && `Marka: ${brand}`, model && `Model/ad: ${model}`, code && `Artikul/kod: ${code}`, ean && `Barkod (EAN): ${ean}`, cat && `Kateqoriya: ${cat}`].filter(Boolean).join("\n");
-  const prompt = `Bu məhsulun HAZIRKI satış qiymətini internetdə tap:
-${ident}
-
-1) AZƏRBAYCAN (Bakı), qiymət AZN ilə: əvvəlcə markanın rəsmi Azərbaycan saytı (məs. zara.com/az, hm.com, lcwaikiki.az, nike.az, adidas.az, apple.com/az), sonra Azərbaycan onlayn mağazaları (umico.az, birmarket.az, trendyol.com/az, kontakt.az, irshad.az, bakuelectronics.az, ideal.az, sportmaster.az, parfum.az və s.).
-2) TÜRKİYƏ, qiymət TRY ilə: markanın rəsmi Türkiyə saytı, sonra trendyol.com, hepsiburada.com, n11.com, boyner.com.tr, beymen.com, sephora.com.tr, gratis.com, mediamarkt.com.tr və s.
-MÜTLƏQ Google Search alətindən istifadə et — yaddaşdan qiymət yazmaq qadağandır. Ən azı bu sorğuları et: "${[brand, code || model].filter(Boolean).join(" ")} fiyat" və "${[brand, code || model].filter(Boolean).join(" ")} qiymət Bakı". Hər ölkədə ən çox 3 təklif.
-QAYDALAR: Yalnız axtarış nəticələrində həqiqətən GÖRDÜYÜN qiymətləri yaz. Təxmin etmə. Eyni artikul/model isə "match":"exact", oxşar məhsuldursa "match":"similar". Tapmasan, siyahını boş qoy.
-Sonda YALNIZ bu JSON-u yaz:
-{"baku":[{"store":"","price":0,"currency":"AZN","url":"","match":"exact"}],"turkey":[{"store":"","price":0,"currency":"TRY","url":"","match":"exact"}],"note":"<1 qısa cümlə Azərbaycan dilində>"}`;
-
   const M = await models();
   try {
-    let out: { text: string; sources: { url: string; title: string }[]; queries?: string[]; dbg?: any };
-    let o: any = {}, grounded = false;
-    if (prov === "gemini") {
-      // 1) two real Google searches in parallel (natural questions — strict-JSON prompts make the model skip searching)
-      const q = [brand, model, code].filter(Boolean).join(" ") || ean;
-      const sm = M.gemini?.search || "gemini-3.8-flash";
-      const trQ = `${q} fiyat. Bu ürünün Türkiye'deki güncel satış fiyatlarını bul: markanın resmi Türkiye sitesi, Trendyol, Hepsiburada, Boyner, n11 vb. Her mağaza için mağaza adı, fiyat (TL), ürün linki ve ürün kodunun aynı olup olmadığını yaz. En fazla 4 mağaza.`;
-      const azQ = `${q} qiymət Bakı. Bu məhsulun Azərbaycanda (Bakı) hazırkı satış qiymətini tap: markanın rəsmi Azərbaycan saytı, Umico, Birmarket, Trendyol Azərbaycan, Bakı mağazaları və s. Hər mağaza üçün ad, qiymət (AZN), link və artikulun eyni olub-olmadığını yaz. Ən çox 4 mağaza.`;
-      const [tr, az] = await Promise.all([geminiOnce(sm, [{ text: trQ }], 900, true, "low"), geminiOnce(sm, [{ text: azQ }], 900, true, "low")]);
-      const isG = (x: any) => x.sources.length > 0 || (x.queries ?? []).length > 0;
-      grounded = isG(tr) || isG(az);
-      out = { text: "", sources: [...tr.sources, ...az.sources], queries: [...(tr.queries ?? []), ...(az.queries ?? [])], dbg: { tr: tr.dbg, az: az.dbg } };
-      // 2) cheap structuring step, no search: only prices that appear in the found text
-      if (grounded) {
-        const fx = M.gemini?.fast || "gemini-3.1-flash-lite";
-        const conv = `Aşağıda internet axtarışının nəticələri var. Onlardan YALNIZ açıq yazılmış qiymətləri götür, heç nə uydurma.
-Məhsul: ${ident.replace(/\n/g, "; ")}
---- TÜRKİYƏ ---
-${isG(tr) ? tr.text : "(axtarış alınmadı)"}
---- BAKI ---
-${isG(az) ? az.text : "(axtarış alınmadı)"}
----
-Qaydalar: qiymət aralığıdırsa (məs. 3000–4500 TL) ən aşağı konkret mağaza qiymətini götür; mağaza adı yoxdursa yazma. Eyni artikul/model "exact", oxşar "similar". Bakı üçün yalnız AZN qiymətləri, Türkiyə üçün yalnız TL.
-YALNIZ JSON:
-{"baku":[{"store":"","price":0,"currency":"AZN","url":"","match":"exact"}],"turkey":[{"store":"","price":0,"currency":"TRY","url":"","match":"exact"}],"note":"<1 qısa cümlə Azərbaycan dilində>"}`;
-        const c = await geminiOnce(fx, [{ text: conv }], 700, false, "low");
-        o = parseJSON(c.text) ?? {};
-      }
-    } else {
-      out = await claudeOnce(M.claude?.search || "claude-haiku-5-5", prompt, 1200, [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }]);
-      grounded = out.sources.length > 0;
-      o = grounded ? (parseJSON(out.text) ?? {}) : {};
+    // 1) several real Google searches in parallel — by article code and by model name, for Türkiye and for Baku
+    const byCode = [brand, code].filter(Boolean).join(" ") || [brand, model].filter(Boolean).join(" ") || ean;
+    const byName = [brand, model].filter(Boolean).join(" ");
+    const sm = M.gemini?.search || "gemini-3.8-flash";
+    const qs: { cc: "tr" | "az"; q: string }[] = [
+      { cc: "tr", q: `${byCode} fiyat. Bu ürünü Türkiye'de satan mağazaları bul (markanın resmi Türkiye sitesi, Trendyol, Hepsiburada, Beymen, Vakko, Boyner, n11 vb.). Her biri için mağaza adı, TL fiyatı, ürün sayfası linki, stok durumu (stokta var / tükendi) ve sayfadaki ürün kodunu yaz. Sadece gerçekten gördüğün sayfaları yaz.` },
+      { cc: "az", q: `${byCode} qiymət Bakı. Bu məhsulu Azərbaycanda (Bakı) satan mağazaları tap: markanın Bakı butiki və ya rəsmi saytı, Azərbaycan onlayn mağazaları (.az saytlar). Hər biri üçün mağaza adı, AZN qiyməti, məhsul səhifəsinin linki, stok vəziyyəti və səhifədəki artikul. Yalnız həqiqətən gördüyün səhifələri yaz.` },
+    ];
+    if (byName && byName !== byCode) {
+      qs.push({ cc: "tr", q: `${byName} fiyat Türkiye. Bu modelin Türkiye'deki güncel satış fiyatları: mağaza, TL fiyat, ürün linki, stok durumu, ürün kodu.` });
+      qs.push({ cc: "az", q: `${byName} price Baku Azerbaijan AZN (цена Баку). Stores in Azerbaijan selling this model: store, price in AZN, product link, stock, article code.` });
     }
-    const clean = (arr: any, cur: string) => (Array.isArray(arr) ? arr : [])
-      .map((x: any) => ({ store: String(x.store ?? "").slice(0, 60), price: Number(x.price), currency: cur, url: String(x.url ?? ""), match: x.match === "similar" ? "similar" : "exact" }))
-      .filter((x: any) => x.price > 0 && x.price < 10_000_000)
-      .map((x: any) => ({ ...x, url: resolveUrl(x, out.sources) }))
-      .slice(0, 4);
-    const result = { baku: clean(o.baku, "AZN"), turkey: clean(o.turkey, "TRY"), note: grounded ? String(o.note ?? "").slice(0, 300) : "İnternet axtarışı bu dəfə alınmadı — “🔄 Təzədən” bas.", sources: out.sources.slice(0, 8), grounded, queries: (out.queries ?? []).slice(0, 6), dbg: out.dbg, at: Date.now() };
+    const runs = await Promise.all(qs.map((x) => geminiOnce(sm, [{ text: x.q }], 900, true, "low").then((r) => ({ ...x, r })).catch(() => null)));
+    const ok = runs.filter((x): x is NonNullable<typeof x> => !!x && (x.r.sources.length > 0 || (x.r.queries ?? []).length > 0));
+    const grounded = ok.length > 0;
+    // 2) every grounding link is a Google redirect — resolve it to the real page address
+    const rawSrc = ok.flatMap((x) => x.r.sources.map((s) => ({ ...s, cc: x.cc })));
+    const seen = new Set<string>(); const srcs: { n: number; url: string; dom: string; cc: string; title: string }[] = [];
+    await Promise.all(rawSrc.slice(0, 24).map(async (s) => { const real = await realUrl(s.url); (s as any).real = real; }));
+    for (const s of rawSrc.slice(0, 24) as any[]) {
+      const u = s.real || s.url; const dom = hostOf(u);
+      if (!dom || seen.has(u)) continue; seen.add(u);
+      srcs.push({ n: srcs.length + 1, url: u, dom, cc: s.cc, title: s.title });
+    }
+    let o: any = {};
+    if (grounded && srcs.length) {
+      // 3) structure: every offer must point to one of the numbered pages that the search really returned
+      const fx = M.gemini?.fast || "gemini-3.1-flash-lite";
+      const conv = `Aşağıda internet axtarışının nəticələri və həqiqətən tapılmış səhifələrin nömrələnmiş siyahısı var. YALNIZ bu mətnlərdə açıq yazılmış qiymətləri götür. Heç nə uydurma; mağaza siyahıda yoxdursa yazma.
+Məhsul: ${ident.replace(/\n/g, "; ")}
+--- AXTARIŞ MƏTNLƏRİ ---
+${ok.map((x) => `[${x.cc.toUpperCase()}] ${x.r.text}`).join("\n\n").slice(0, 14000)}
+--- TAPILMIŞ SƏHİFƏLƏR ---
+${srcs.map((s) => `[${s.n}] ${s.dom} — ${s.url}`).join("\n")}
+---
+Qaydalar: hər təklif üçün "src" — yuxarıdakı səhifə nömrəsi (məcburi; uyğun səhifə yoxdursa təklifi yazma). "code_on_page" — səhifədə/mətndə görünən artikul (yoxdursa boş). "in_stock": true/false/null (mətndə "tükendi", "stokta yok", "sold out", "out of stock" varsa false). "match": artikul tam eynidirsə "exact", eyni model başqa rəng/ölçü/variant və ya kod fərqlidirsə "similar". Bakı üçün yalnız AZN, Türkiyə üçün yalnız TL qiymətlər. Qiymət aralığı varsa konkret mağaza qiymətini götür.
+YALNIZ JSON:
+{"baku":[{"store":"","price":0,"src":1,"code_on_page":"","in_stock":true,"match":"exact"}],"turkey":[{"store":"","price":0,"src":1,"code_on_page":"","in_stock":true,"match":"exact"}]}`;
+      const c = await geminiOnce(fx, [{ text: conv }], 900, false, "low");
+      o = parseJSON(c.text) ?? {};
+    }
+    // 4) keep only offers tied to a real page of the right country, then open each page and check price + stock
+    const ncode = norm(code);
+    const build = async (arr: any, cur: string, cc: "az" | "tr") => {
+      const list = (Array.isArray(arr) ? arr : []).map((x: any) => {
+        const s = srcs.find((y) => y.n === Number(x.src)); if (!s) return null;
+        const price = Number(x.price); if (!(price > 0 && price < 10_000_000)) return null;
+        if (!countryOk(s.url, cc)) return null;
+        const cop = norm(x.code_on_page);
+        let match: "exact" | "similar" = x.match === "similar" ? "similar" : "exact";
+        if (ncode && cop && cop !== ncode && !cop.startsWith(ncode) && !ncode.startsWith(cop)) match = "similar";
+        if (ncode && cop && cop.length > ncode.length + 1) match = "similar"; // e.g. 1EL07-1000 vs 1EL07 001
+        return { store: String(x.store || s.dom).slice(0, 60), price, currency: cur, url: s.url, match, stock: x.in_stock === false ? "out" : "unknown", check: "none", code_on_page: String(x.code_on_page ?? "").slice(0, 40) };
+      }).filter(Boolean) as any[];
+      // de-duplicate the same page
+      const uniq: any[] = []; for (const x of list) if (!uniq.find((y) => y.url === x.url && y.price === x.price)) uniq.push(x);
+      await Promise.all(uniq.slice(0, 6).map((x) => verifyPage(x, ncode)));
+      return uniq.slice(0, 6);
+    };
+    const [baku, turkey] = await Promise.all([build(o.baku, "AZN", "az"), build(o.turkey, "TRY", "tr")]);
+    const sortOffers = (a: any[]) => a.sort((x, y) => (x.stock === "out" ? 1 : 0) - (y.stock === "out" ? 1 : 0) || x.price - y.price);
+    sortOffers(baku); sortOffers(turkey);
+    const live = (a: any[]) => a.filter((x) => x.stock !== "out" && x.check !== "price_missing");
+    const note = !grounded ? "İnternet axtarışı bu dəfə alınmadı — “🔄 Təzədən” bas."
+      : [live(baku).length ? "" : "Bakıda onlayn satış tapılmadı — markanın Bakı butikinə zəng edib soruşmaq olar.", live(turkey).length ? "" : "Türkiyədə satışda olan təklif tapılmadı."].filter(Boolean).join(" ");
+    const result = { v: 2, baku, turkey, note, sources: srcs.slice(0, 10).map((s) => ({ url: s.url, title: s.dom })), grounded, queries: ok.flatMap((x) => x.r.queries ?? []).slice(0, 8), at: Date.now() };
     if (grounded) await sb.from("price_cache").upsert({ key, result, provider: prov, created_at: new Date().toISOString() });
     await logPrice(b, p, result);
     return json({ result, cached: false, provider: prov });
   } catch (e: any) { return json({ error: e.code ?? "upstream", detail: e.detail ? String(e.detail).slice(0, 300) : undefined }, e.status ?? 502); }
+}
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+// Google grounding links are redirects (vertexaisearch.cloud.google.com/grounding-api-redirect/...): read where they point
+async function realUrl(u: string): Promise<string> {
+  if (!/vertexaisearch|google\.com\/url/.test(u)) return u;
+  try {
+    const r = await fetch(u, { redirect: "manual", signal: AbortSignal.timeout(4000) });
+    const loc = r.headers.get("location"); await r.body?.cancel();
+    return loc && /^https?:/.test(loc) ? loc : u;
+  } catch { return u; }
+}
+// the shop must belong to the right country (a .com/us page is not a Baku price)
+function countryOk(u: string, cc: "az" | "tr") {
+  let h = "", seg = ""; try { const x = new URL(u); h = x.hostname.replace(/^www\./, ""); seg = (x.pathname.split("/")[1] || "").toLowerCase(); } catch { return false; }
+  if (/vertexaisearch|google\./.test(h)) return false;
+  if (new RegExp(`^(${cc}|[a-z]{2}[-_]${cc}|${cc}[-_][a-z]{2})$`).test(seg)) return true;
+  if (h.startsWith(cc + ".")) return true;
+  return cc === "az" ? /\.az$/.test(h) : /\.tr$/.test(h) || /(^|\.)(trendyol|hepsiburada|n11|beymen|vakko|gratis|boyner|morhipo|lcwaikiki|koton|defacto|mavi|network|ipekyol|sephora)\.com$/.test(h);
+}
+// open the shop page itself: is the price really there, is it sold out, is it the same article?
+async function verifyPage(x: any, ncode: string) {
+  try {
+    const r = await fetch(x.url, { signal: AbortSignal.timeout(5500), redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "accept-language": "tr-TR,tr;q=0.9,az;q=0.8,en;q=0.7" } });
+    if (!r.ok) { x.check = r.status === 404 || r.status === 410 ? "gone" : "blocked"; await r.body?.cancel(); if (x.check === "gone") x.stock = "out"; return; }
+    const html = (await r.text()).slice(0, 900_000);
+    const txt = html.replace(/<script[\s\S]*?<\/script>/gi, (m) => /ld\+json|__NEXT_DATA__|product/i.test(m) ? m : " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ");
+    const low = txt.toLowerCase();
+    // stock: schema.org says so, or the page shows a sold-out word and no add-to-basket button
+    const soldWord = /(tükendi|tükenmiştir|stokta yok|stokta bulunmamaktadır|out of stock|sold out|outofstock|нет в наличии|stokda yoxdur|mövcud deyil|satışda yoxdur)/i.test(low);
+    const buyWord = /(sepete ekle|add to (bag|cart|basket)|səbətə (at|əlavə)|в корзину|hemen al|instock)/i.test(low);
+    if (/"availability"\s*:\s*"[^"]*outofstock/i.test(html) || (soldWord && !buyWord)) x.stock = "out";
+    else if (/"availability"\s*:\s*"[^"]*instock/i.test(html) || buyWord) x.stock = "in";
+    // price: the number must appear on the page (any common format)
+    const n = Math.round(x.price), ip = String(n);
+    const forms = [ip, ip.replace(/\B(?=(\d{3})+(?!\d))/g, "."), ip.replace(/\B(?=(\d{3})+(?!\d))/g, ","), ip.replace(/\B(?=(\d{3})+(?!\d))/g, " ")];
+    const plain = txt.replace(/ | /g, " ");
+    x.check = forms.some((f) => plain.includes(f)) ? "ok" : "price_missing";
+    if (ncode) { const pc = norm(txt); if (pc.includes(ncode)) { if (x.match !== "similar" || !x.code_on_page) x.match = "exact"; } else if (x.match === "exact" && ncode.length >= 6 && !pc.includes(ncode.slice(0, 6))) x.match = "similar"; }
+  } catch { x.check = "blocked"; }
 }
 // Prefer a real source link from search results whose domain matches the offer.
 function resolveUrl(offer: { url: string; store: string }, sources: { url: string; title: string }[]) {
