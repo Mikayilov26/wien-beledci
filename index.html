@@ -23,7 +23,7 @@
   --r:18px; --sh:0 1px 2px rgba(40,30,20,.05),0 6px 20px rgba(40,30,20,.06);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer}
 h1,h2,h3{font-family:Fraunces,Georgia,serif;margin:0;letter-spacing:-.01em;font-weight:700}
@@ -39,7 +39,7 @@ header{padding:calc(var(--safe-t) + 8px) 16px 8px;display:flex;align-items:cente
 .loc i{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
 .loc.on i{background:var(--green);box-shadow:0 0 0 3px rgba(46,139,87,.2)}
 main{flex:1;position:relative;overflow:hidden}
-.view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 16px 28px;display:none}
+.view{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 16px 28px;display:none}
 .view.on{display:block}
 #v-map{padding:0;overflow:hidden}
 nav{display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
@@ -400,7 +400,7 @@ details summary{cursor:pointer;list-style:none}
 <div class="modal" id="bigModal" style="align-items:center"><div class="box" style="border-radius:24px;text-align:center;margin:16px" id="bigBox"></div></div>
 <div class="toast" id="toast"></div>
 
-<script src="data.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="data.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

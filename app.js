@@ -1225,11 +1225,14 @@ function mapGo(lat, lng, z) { if (map) map.easeTo({ center: [lng, lat], zoom: z 
 function circlePoly(lat, lng, r, n = 48) { const pts = []; for (let i = 0; i <= n; i++) { const a = i / n * 2 * Math.PI; pts.push([lng + r / (111320 * Math.cos(lat * Math.PI / 180)) * Math.cos(a), lat + r / 110540 * Math.sin(a)]); } return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [pts] } }; }
 function setSrc(id, data) { if (!map || !mapReady) return; const s = map.getSource(id); if (s) s.setData(data); }
 function addMk(el, lng, lat, anchor) { return new (ML().Marker)({ element: el, anchor: anchor || "center" }).setLngLat([lng, lat]).addTo(map); }
-function fitTo(pts, maxZ) {
+function fitTo(pts, maxZ, minZ) {
   if (!map || !pts.length) return;
   if (pts.length === 1) return mapGo(pts[0].lat, pts[0].lng, maxZ || 16);
   const b = new (ML().LngLatBounds)(); pts.forEach(p => b.extend([p.lng, p.lat]));
-  map.fitBounds(b, { padding: { top: 90, bottom: 120, left: 40, right: 70 }, maxZoom: maxZ || 16.5, duration: 600 });
+  // never fly far out of the city: if the box is too big, just centre on it at a sane zoom
+  const cam = map.cameraForBounds ? map.cameraForBounds(b, { padding: { top: 90, bottom: 120, left: 40, right: 70 }, maxZoom: maxZ || 16.5 }) : null;
+  if (cam && minZ && cam.zoom < minZ) return map.easeTo({ center: cam.center, zoom: minZ, bearing: 0, pitch: 0, duration: 450 });
+  map.fitBounds(b, { padding: { top: 90, bottom: 120, left: 40, right: 70 }, maxZoom: maxZ || 16.5, duration: 450, bearing: 0, pitch: 0 });
 }
 const ML_JS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", ML_CSS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
 let mlLoading = null;
@@ -1334,7 +1337,7 @@ function renderNear() {
     cards = st.length ? `<div class="nc lbl0">📅 ${today ? "Bugünkü plan" : "17 noyabr planı"}<span>kateqoriya seç ↑</span></div>` + st.map(p => `<button class="nc" data-p="${p.id}"><b><em style="background:${CAT[p.cat].c}">${p._n}</em>${esc(short(p.name))}</b><span>${p._t}${ref ? " · " + fmtKm(walkM(dist(ref, p))) : ""}</span></button>`).join("") : "";
   } else {
     const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d).slice(0, 10);
-    cards = l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq" : ""}</span></button>`).join("");
+    cards = l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km · şəhərdən kənar" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq") : ""}</span></button>`).join("");
   }
   box.innerHTML = cards; box.hidden = !cards; box.scrollLeft = 0;
   box.querySelectorAll("[data-p]").forEach(b => b.onclick = () => selectPoi(b.dataset.p, true));
@@ -1347,8 +1350,9 @@ function setFilter(f) {
   if (!map) return;
   if (S.filter == null) return fitTo(planStops().concat(meHere() ? [S.me] : []));
   const ref = meHere() ? S.me : map.getCenter();
-  const near = visiblePois().map(p => ({ p, d: dist(ref, p) })).sort((a, b) => a.d - b.d).slice(0, S.filter === "all" ? 25 : 8).map(x => x.p);
-  fitTo(near.concat(meHere() ? [S.me] : []));
+  const city = { lat: 48.2085, lng: 16.3721 }; // Stephansplatz
+  const near = visiblePois().filter(p => dist(city, p) < 7000).map(p => ({ p, d: dist(ref, p) })).sort((a, b) => a.d - b.d).slice(0, S.filter === "all" ? 25 : 8).map(x => x.p);
+  if (near.length) fitTo(near.concat(meHere() ? [S.me] : []), 16, 11.5);
 }
 function mapMe() {
   if (!map) return; if (MK.me) { MK.me.remove(); MK.me = null; }
@@ -1510,6 +1514,13 @@ async function renderAlbum(B) {
 }
 
 /* ---------- navigation ---------- */
+function unstick(v) {
+  if (!v) return;
+  requestAnimationFrame(() => { v.style.overflowY = "hidden"; void v.offsetHeight; v.style.overflowY = ""; const t = v.scrollTop; v.scrollTop = t + 1; v.scrollTop = t; });
+}
+const curView = () => $(".view.on");
+document.addEventListener("visibilitychange", () => { if (!document.hidden) unstick(curView()); });
+addEventListener("pageshow", () => unstick(curView()));
 function goView(v) {
   useTrack("view:" + v);
   $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
@@ -1519,13 +1530,14 @@ function goView(v) {
   if (v === "exp") { renderExp(); sync(); }
   if (v === "plan") renderMore();
   if (v === "home") renderHome();
+  unstick($("#v-" + v));
 }
 $$("#nav button").forEach(b => b.onclick = () => { if (b.dataset.v === "home" && !$("#result").hidden) closeResult(); goView(b.dataset.v); });
 window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "30";
+const APPV = "31";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
