@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   if (!uname) return json({ error: "no_user" }, 403);
   const admin = uname === "admin";
   const who = admin ? (PEOPLE.includes(b.as) ? b.as : "") : uname;
-  b.who = who;
+  b.who = who; b.sbx = admin; // admin test link = sandbox: its writes are kept apart and never shown to the girls
   const k = keys();
   const aiStatus = { claude: !!k.claude, gemini: !!k.gemini };
 
@@ -83,14 +83,16 @@ Deno.serve(async (req) => {
 
       case "sync": {
         const [ex, kv, pl] = await Promise.all([
-          sb.from("expenses").select("*").or(`priv.eq.false,by.eq.${who || "-"}`).order("ts", { ascending: false }).limit(1500),
+          admin ? sb.from("expenses").select("*").or("priv.eq.false,sbx.eq.true").order("ts", { ascending: false }).limit(1500)
+            : sb.from("expenses").select("*").eq("sbx", false).or(`priv.eq.false,by.eq.${who || "-"}`).order("ts", { ascending: false }).limit(1500),
           sb.from("kv").select("key,value,updated_at"),
           sb.from("price_log").select("id", { count: "exact", head: true }),
         ]);
         if (ex.error) throw ex.error;
         if (kv.error) throw kv.error;
         const kvm: Record<string, unknown> = {};
-        for (const r of kv.data ?? []) if (r.key !== "pushlog") kvm[r.key] = r.value;
+        for (const r of kv.data ?? []) if (r.key !== "pushlog" && !r.key.startsWith("sbx:") && !r.key.startsWith("nudge")) kvm[r.key] = r.value;
+        if (admin) for (const r of kv.data ?? []) if (r.key.startsWith("sbx:")) kvm[r.key.slice(4)] = r.value; // admin sees own test state on top
         return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
       }
 
@@ -106,7 +108,7 @@ Deno.serve(async (req) => {
           orig: r.orig != null ? Math.round(Number(r.orig) * 100) / 100 : null,
           cur: r.cur === "AZN" ? "AZN" : "EUR", payer: r.payer, parts,
           by: who, ts: Number(r.ts) || Date.now(), tf: r.tf === true,
-          priv: r.priv === true, cat: r.cat ? String(r.cat).slice(0, 30) : null,
+          priv: r.priv === true, cat: r.cat ? String(r.cat).slice(0, 30) : null, sbx: admin,
         };
         const { data, error } = await sb.from("expenses").insert(row).select().single();
         if (error) throw error;
@@ -114,8 +116,9 @@ Deno.serve(async (req) => {
       }
       case "exp.upd": {
         if (!who) return json({ error: "no_user" }, 403);
-        const { data: old } = await sb.from("expenses").select("priv,by").eq("id", String(b.id)).maybeSingle();
+        const { data: old } = await sb.from("expenses").select("priv,by,sbx").eq("id", String(b.id)).maybeSingle();
         if (!old) return json({ error: "not_found" }, 404);
+        if (old.sbx !== admin) return json({ error: admin ? "test_readonly" : "not_found" }, admin ? 403 : 404);
         if (old.priv && old.by !== who) return json({ error: "forbidden" }, 403);
         const r = b.row ?? {};
         const eur = Number(r.eur);
@@ -132,14 +135,14 @@ Deno.serve(async (req) => {
         return json({ row: data });
       }
       case "exp.tf": {
-        const { error } = await sb.from("expenses").update({ tf: b.tf === true }).eq("id", String(b.id));
+        const { error } = await sb.from("expenses").update({ tf: b.tf === true }).eq("id", String(b.id)).eq("sbx", admin);
         if (error) throw error;
         return json({ ok: true });
       }
       case "exp.del": {
         const { data: row } = await sb.from("expenses").select("priv,by").eq("id", String(b.id)).maybeSingle();
         if (row && row.priv && row.by !== who) return json({ error: "forbidden" }, 403);
-        const { error } = await sb.from("expenses").delete().eq("id", String(b.id));
+        const { error } = await sb.from("expenses").delete().eq("id", String(b.id)).eq("sbx", admin);
         if (error) throw error;
         return json({ ok: true });
       }
@@ -155,10 +158,10 @@ Deno.serve(async (req) => {
           if (key !== "loc:" + who) return json({ error: "forbidden" }, 403);
           if (v !== null && !(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
         } else return json({ error: "readonly" }, 400);
-        if (v === null) { await sb.from("kv").delete().eq("key", key); return json({ ok: true }); }
+        if (v === null) { await sb.from("kv").delete().eq("key", admin ? "sbx:" + key : key); return json({ ok: true }); }
         const val = key === "prog" ? v : key === "hotel" ? { lat: v.lat, lng: v.lng, name: String(v.name ?? "").slice(0, 80), addr: String(v.addr ?? "").slice(0, 160), phone: String(v.phone ?? "").slice(0, 30), ci: String(v.ci ?? "").slice(0, 30), co: String(v.co ?? "").slice(0, 30), note: String(v.note ?? "").slice(0, 300) }
           : { lat: v.lat, lng: v.lng, acc: Number(v.acc) || 0, ts: Date.now() };
-        const { error } = await sb.from("kv").upsert({ key, value: val, updated_at: new Date().toISOString() });
+        const { error } = await sb.from("kv").upsert({ key: admin ? "sbx:" + key : key, value: val, updated_at: new Date().toISOString() });
         if (error) throw error;
         return json({ ok: true });
       }
@@ -167,17 +170,19 @@ Deno.serve(async (req) => {
         const t = String(b.thumb || "");
         if (!t.startsWith("data:image/jpeg;base64,") || t.length > 115000) return json({ error: "invalid" }, 400);
         if (!who) return json({ error: "no_user" }, 403);
-        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who, name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t, priv: b.priv === true });
+        const { error } = await sb.from("photos").insert({ ts: Number(b.ts) || Date.now(), who, name: String(b.name ?? "").slice(0, 100), poi: String(b.poi ?? "").slice(0, 40), thumb: t, priv: b.priv === true, sbx: admin });
         if (error) throw error;
         return json({ ok: true });
       }
       case "photos": {
-        const { data, error } = await sb.from("photos").select("id,ts,who,name,poi,thumb,priv").or(`priv.eq.false,who.eq.${who || "-"}`).order("ts", { ascending: false }).limit(120);
+        const { data, error } = await (admin ? sb.from("photos").select("id,ts,who,name,poi,thumb,priv").or("priv.eq.false,sbx.eq.true")
+          : sb.from("photos").select("id,ts,who,name,poi,thumb,priv").eq("sbx", false).or(`priv.eq.false,who.eq.${who || "-"}`)).order("ts", { ascending: false }).limit(120);
         if (error) throw error;
         return json({ photos: data });
       }
       case "prices": {
-        const { data, error } = await sb.from("price_log").select("id,ts,who,brand,name,code,vienna_eur,result,thumb").order("ts", { ascending: false }).limit(100);
+        let pq = sb.from("price_log").select("id,ts,who,brand,name,code,vienna_eur,result,thumb"); if (!admin) pq = pq.eq("sbx", false);
+        const { data, error } = await pq.order("ts", { ascending: false }).limit(100);
         if (error) throw error;
         return json({ prices: data });
       }
@@ -185,7 +190,7 @@ Deno.serve(async (req) => {
       // ---- private per-person lists (only the owner ever sees them) ----
       case "gifts": {
         if (!who) return json({ gifts: [] });
-        const { data, error } = await sb.from("gifts").select("*").eq("by", who).order("ts", { ascending: true });
+        const { data, error } = await sb.from("gifts").select("*").eq("by", who).eq("sbx", admin).order("ts", { ascending: true });
         if (error) throw error;
         return json({ gifts: data });
       }
@@ -194,7 +199,7 @@ Deno.serve(async (req) => {
         const recipient = String(b.recipient ?? "").trim().slice(0, 40), item = String(b.item ?? "").trim().slice(0, 100);
         if (!recipient || !item) return json({ error: "invalid" }, 400);
         const budget = Number(b.budget) > 0 ? Math.round(Number(b.budget) * 100) / 100 : null;
-        const { data, error } = await sb.from("gifts").insert({ by: who, recipient, item, budget, ts: Date.now() }).select().single();
+        const { data, error } = await sb.from("gifts").insert({ by: who, recipient, item, budget, ts: Date.now(), sbx: admin }).select().single();
         if (error) throw error;
         return json({ gift: data });
       }
@@ -206,19 +211,19 @@ Deno.serve(async (req) => {
         if (b.store !== undefined) upd.store = String(b.store ?? "").slice(0, 60);
         if (b.item !== undefined) upd.item = String(b.item).slice(0, 100);
         if (b.budget !== undefined) upd.budget = Number(b.budget) > 0 ? Number(b.budget) : null;
-        const { data, error } = await sb.from("gifts").update(upd).eq("id", String(b.id)).eq("by", who).select().single();
+        const { data, error } = await sb.from("gifts").update(upd).eq("id", String(b.id)).eq("by", who).eq("sbx", admin).select().single();
         if (error) throw error;
         return json({ gift: data });
       }
       case "gift.del": {
         if (!who) return json({ error: "no_user" }, 403);
-        const { error } = await sb.from("gifts").delete().eq("id", String(b.id)).eq("by", who);
+        const { error } = await sb.from("gifts").delete().eq("id", String(b.id)).eq("by", who).eq("sbx", admin);
         if (error) throw error;
         return json({ ok: true });
       }
       case "notes": {
         if (!who) return json({ notes: [] });
-        const { data, error } = await sb.from("notes").select("id,day,txt,ts").eq("by", who).order("ts", { ascending: true });
+        const { data, error } = await sb.from("notes").select("id,day,txt,ts").eq("by", who).eq("sbx", admin).order("ts", { ascending: true });
         if (error) throw error;
         return json({ notes: data });
       }
@@ -226,25 +231,26 @@ Deno.serve(async (req) => {
         if (!who) return json({ error: "no_user" }, 403);
         const txt = String(b.txt ?? "").trim().slice(0, 2000), day = String(b.day ?? "").slice(0, 10);
         if (!txt || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: "invalid" }, 400);
-        const { data, error } = await sb.from("notes").insert({ by: who, day, txt, ts: Date.now() }).select("id,day,txt,ts").single();
+        const { data, error } = await sb.from("notes").insert({ by: who, day, txt, ts: Date.now(), sbx: admin }).select("id,day,txt,ts").single();
         if (error) throw error;
         return json({ note: data });
       }
       case "note.del": {
         if (!who) return json({ error: "no_user" }, 403);
-        const { error } = await sb.from("notes").delete().eq("id", String(b.id)).eq("by", who);
+        const { error } = await sb.from("notes").delete().eq("id", String(b.id)).eq("by", who).eq("sbx", admin);
         if (error) throw error;
         return json({ ok: true });
       }
 
       // ---- bookings / tickets (own + shared) and reminders ----
       case "bookings": {
-        const { data, error } = await sb.from("bookings").select("*").or(`shared.eq.true,by.eq.${who || "-"}`).order("at", { ascending: true });
+        const { data, error } = await (admin ? sb.from("bookings").select("*").or("and(shared.eq.true,sbx.eq.false),sbx.eq.true")
+          : sb.from("bookings").select("*").eq("sbx", false).or(`shared.eq.true,by.eq.${who || "-"}`)).order("at", { ascending: true });
         if (error) throw error;
         return json({ bookings: data, vapid: await cfg("vapid_pub") });
       }
       case "booking.add": case "booking.upd": {
-        if (!who) return json({ error: "no_user" }, 403);
+        if (!who && !admin) return json({ error: "no_user" }, 403);
         const r = b.row ?? {};
         const at = new Date(String(r.at ?? ""));
         const title = String(r.title ?? "").trim().slice(0, 100);
@@ -253,31 +259,31 @@ Deno.serve(async (req) => {
         const row: Record<string, unknown> = { title, at: at.toISOString(), shared: r.shared === true, poi: r.poi ? String(r.poi).slice(0, 40) : null, place: String(r.place ?? "").slice(0, 120), note: String(r.note ?? "").slice(0, 500), lead_min: Math.max(0, Math.min(1440, Number(r.lead_min) || 60)), sent: false };
         if (img !== undefined) row.img = img;
         if (b.op === "booking.add") {
-          const { data, error } = await sb.from("bookings").insert({ ...row, by: who }).select().single();
+          const { data, error } = await sb.from("bookings").insert({ ...row, by: who || "Kənan", sbx: admin }).select().single();
           if (error) throw error;
           return json({ booking: data });
         }
-        const { data, error } = await sb.from("bookings").update(row).eq("id", String(b.id)).eq("by", who).select().single();
+        const { data, error } = await sb.from("bookings").update(row).eq("id", String(b.id)).eq("sbx", admin).eq("by", who || "Kənan").select().single();
         if (error) throw error;
         return json({ booking: data });
       }
       case "booking.del": {
         if (!who) return json({ error: "no_user" }, 403);
-        const { error } = await sb.from("bookings").delete().eq("id", String(b.id)).eq("by", who);
+        const { error } = await sb.from("bookings").delete().eq("id", String(b.id)).eq("sbx", admin).eq("by", who || "Kənan");
         if (error) throw error;
         return json({ ok: true });
       }
       case "push.sub": {
-        if (!who) return json({ error: "no_user" }, 403);
+        if (!who && !admin) return json({ error: "no_user" }, 403);
         const sub = b.sub;
         if (!sub || typeof sub.endpoint !== "string" || !sub.keys) return json({ error: "invalid" }, 400);
-        const { error } = await sb.from("push_subs").upsert({ endpoint: sub.endpoint, who, sub });
+        const { error } = await sb.from("push_subs").upsert({ endpoint: sub.endpoint, who: admin ? "admin" : who, sub }); // the test phone gets its own slot (copies of what the girls receive)
         if (error) throw error;
         return json({ ok: true });
       }
       case "push.test": {
-        if (!who) return json({ error: "no_user" }, 403);
-        const n = await sendTo([who], { title: "🔔 Wien Bələdçi", body: "Bildirişlər işləyir! Xatırlatmalar bura gələcək." });
+        if (!who && !admin) return json({ error: "no_user" }, 403);
+        const n = await sendTo([admin ? "admin" : who], { title: "🔔 Wien Bələdçi", body: "Bildirişlər işləyir! Xatırlatmalar bura gələcək." });
         return json({ sent: n });
       }
 
@@ -288,6 +294,7 @@ Deno.serve(async (req) => {
         const { data: subs } = await sb.from("push_subs").select("who").in("who", to);
         let msg: any = { title: "🔔 Wien Bələdçi", body: "Yoxlama bildirişi — bunu görürsənsə, bildirişlər işləyir ✓" };
         if (b.brief) { const m = await briefMsg(vParts(Date.now()).date); if (m) msg = m; }
+        if (b.nudge) return json(await nudgeRun(Date.now(), { dry: !!b.dry, force: true, only: to }));
         const res = b.dry ? [] : await sendToR(to, msg);
         return json({ subscribed: (subs ?? []).map((x: any) => x.who), results: res });
       }
@@ -369,9 +376,10 @@ async function pushTick() {
     if (!done) {
       await sb.from("kv").upsert({ key: flag, value: { ts: now }, updated_at: new Date().toISOString() });
       const m = await briefMsg(vp.date);
-      if (m) await sendTo(PEOPLE, m);
+      if (m) { await sendTo(PEOPLE, m); await sendTo(["admin"], { ...m, title: "📋 Hamıya: " + m.title }); }
     }
   }
+  try { await nudgeRun(now, {}); } catch { /* nudges must never block reminders */ }
   const { data } = await sb.from("bookings").select("*").eq("sent", false).lte("at", new Date(now + 1440 * 60000).toISOString()).gte("at", new Date(now - 3600000).toISOString());
   let sent = 0;
   for (const bk of data ?? []) {
@@ -379,12 +387,87 @@ async function pushTick() {
     if (due > now) continue;
     const mins = Math.max(0, Math.round((new Date(bk.at).getTime() - now) / 60000));
     const t = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit" }).format(new Date(bk.at));
-    const people = bk.shared ? PEOPLE : [bk.by];
-    sent += await sendTo(people, { title: `⏰ ${mins > 0 ? mins + " dəq sonra" : "İndi"}: ${bk.title}`, body: `${t}${bk.place ? " · " + bk.place : ""}${bk.note ? "\n" + bk.note : ""}` });
+    const people = bk.sbx ? ["admin"] : bk.shared ? PEOPLE : [bk.by];
+    const rm = { title: `⏰ ${mins > 0 ? mins + " dəq sonra" : "İndi"}: ${bk.title}`, body: `${t}${bk.place ? " · " + bk.place : ""}${bk.note ? "\n" + bk.note : ""}` };
+    sent += await sendTo(people, rm);
+    if (!bk.sbx) await sendTo(["admin"], { ...rm, title: "📋 " + (bk.shared ? "Hamıya" : bk.by + "-a") + ": " + rm.title });
     await sb.from("bookings").update({ sent: true }).eq("id", bk.id);
   }
   return { ok: true, sent };
 }
+
+// 💌 friendly "try this" nudges: max 2–3 a day per girl, picked from what she has not used yet; a copy goes to Kənan's test phone
+const NUDGE_SLOTS: Record<string, string[]> = { "2026-11-17": ["15:30", "18:45"], "2026-11-18": ["11:00", "15:00", "18:45"], "2026-11-19": ["11:00", "15:00", "18:45"], "2026-11-20": ["17:00"] };
+const NUDGE_PLACES: Record<string, [string, string, string][]> = {
+  "2026-11-17": [["14:45", "17:45", "Stephansdom"], ["18:15", "21:00", "Rathaus Milad bazarı"]],
+  "2026-11-18": [["09:15", "11:30", "Schönbrunn sarayı"], ["11:30", "13:45", "Gloriette"]],
+  "2026-11-19": [["09:15", "11:30", "Belvedere"], ["11:30", "13:00", "Hundertwasserhaus"], ["14:15", "17:30", "Prater"]],
+};
+type Nudge = { id: string; t: string; b: string; go: string; eve?: boolean; mid?: boolean; need?: (u: Record<string, number>) => boolean };
+const KT = "Kənan bu gəzintidə tətbiqi test edir — ona kömək edin 😄";
+const NUDGES: Nudge[] = [
+  { id: "story", mid: true, t: "📖 {place} yanındasınız?", b: "Xəritədə yerə toxunun — hekayəsini danışım, istəsəniz səsli də 🔊 " + KT, go: "map" },
+  { id: "cam", mid: true, t: "📷 Yeri tanıyım?", b: "Bir şəkil çəkin, tətbiq yeri özü tapsın və tarixini danışsın 🔍 Kənan üçün yoxlayın: düz tapacaq? 🙈", go: "cam", need: (u) => !u["op:ai"] },
+  { id: "price", mid: true, t: "🛍 Bakıda neçəyədir?", b: "Mağazada bəyəndiyiniz şeyin etiketini çəkin — Bakı və Türkiyə qiymətini göstərim 💸 Kənan nəticəni maraqla gözləyir 🙈", go: "price", need: (u) => !u["op:price.search"] && !u.prices },
+  { id: "tr", mid: true, t: "🗣 Almanca lazım oldu?", b: "Tərcümə bölməsi yazır və səsli oxuyur — telefon səssizdə olsa belə 🔊 " + KT, go: "tr", need: (u) => !u["view:tr"] && !u["op:gt"] },
+  { id: "reco", mid: true, t: "✨ İndi hara gedək?", b: "Bilmirsinizsə, ana səhifədəki “İndi hara gedək?” düyməsini basın — yaxındakı ən yaxşı yeri deyim 😉 Kənan bu düyməni çox sevir", go: "reco" },
+  { id: "exp", eve: true, t: "💶 Bu gün nəyə xərclədiniz?", b: "Xərclər bölməsinə yazın, çekin şəklini də çəkə bilərsiniz — hesab üçünüzə özü bölünür 🧮 " + KT, go: "exp", need: (u) => !u["op:exp.add"] },
+  { id: "menu", eve: true, t: "🍽 Şam yeməyi vaxtı!", b: "Menyunun şəklini çəkin — azərbaycancaya tərcümə edim 📖 Kənan üçün yoxlayın, düz tərcümə edirmi? 😄", go: "menu" },
+  { id: "alb", eve: true, t: "🖼 Günün ən gözəl şəkli?", b: "Bu günün şəkillərini albomə atın — trip sonunda hamısı bir yerdə olacaq 📸", go: "alb", need: (u) => !u.photosToday },
+  { id: "mem", eve: true, t: "📔 Bu gün necə keçdi?", b: "Günün xatirəsini 1–2 cümlə ilə yazın — Kənan trip sonunda oxumaq istəyir 😊", go: "mem" },
+];
+const NUDGE_HOME: Nudge = { id: "home", t: "🏡 Evə xoş gəldiniz 💛", b: "Şəkilləri albomə əlavə edin və gəzintinin xatirəsini, davamını tətbiqdə yazın — Kənan oxumağa hazırdır 😊", go: "alb" };
+async function nudgeRun(now: number, o: { dry?: boolean; force?: boolean; only?: string[] }) {
+  const vp = vParts(now), slots = NUDGE_SLOTS[vp.date] ?? [];
+  const slot = [...slots].reverse().find((x) => vp.time >= x);
+  if (!o.force && (!slot || vp.time > addMin(slot, 40))) return { skipped: "no_slot" };
+  const people = (o.only ?? PEOPLE).filter((p) => PEOPLE.includes(p));
+  const { data: subs } = await sb.from("push_subs").select("who").in("who", people);
+  const subbed = new Set((subs ?? []).map((x: any) => x.who));
+  const { data: st } = await sb.from("kv").select("value").eq("key", "nudge:state").maybeSingle();
+  const state: any = st?.value ?? {};
+  // no nudge right next to a real reminder
+  const { data: soon } = await sb.from("bookings").select("id").eq("sbx", false).gte("at", new Date(now - 15 * 60000).toISOString()).lte("at", new Date(now + 45 * 60000).toISOString());
+  if (!o.force && (soon ?? []).length) return { skipped: "booking_nearby" };
+  const since = "2026-11-16T00:00:00Z", dayStart = new Date(`${vp.date}T00:00:00+01:00`).toISOString();
+  const place = (NUDGE_PLACES[vp.date] ?? []).find(([a, z]) => vp.time >= a && vp.time < z)?.[2];
+  const plan: { who: string; n: Nudge }[] = [];
+  for (const [i, who] of people.entries()) {
+    const ps = state[who] ?? { slots: [], ids: [], last: 0 };
+    if (!o.force && (ps.slots.includes(vp.date + " " + slot) || now - (ps.last ?? 0) < 150 * 60000)) continue;
+    if (!subbed.has(who)) continue;
+    let n: Nudge | undefined;
+    if (vp.date === "2026-11-20") n = ps.ids.includes("home") ? undefined : NUDGE_HOME;
+    else {
+      const u: Record<string, number> = {};
+      const { data: ev } = await sb.from("usage").select("ev").eq("who", who).gte("ts", since).limit(5000);
+      for (const e of ev ?? []) u[e.ev] = (u[e.ev] ?? 0) + 1;
+      const [{ count: pc }, { count: ph }] = await Promise.all([
+        sb.from("price_log").select("id", { count: "exact", head: true }).eq("who", who).eq("sbx", false),
+        sb.from("photos").select("id", { count: "exact", head: true }).eq("who", who).eq("sbx", false).gte("created_at", dayStart),
+      ]);
+      u.prices = pc ?? 0; u.photosToday = ph ?? 0;
+      const eve = (slot ?? vp.time) >= "18:00";
+      const pool = NUDGES.filter((x) => (eve ? x.eve : x.mid) && !ps.ids.includes(x.id) && (!x.need || x.need(u)) && (x.id !== "story" || !!place));
+      n = pool.length ? pool[i % pool.length] : undefined; // the three get different suggestions when possible
+    }
+    if (n) plan.push({ who, n });
+  }
+  const out: any[] = [];
+  for (const { who, n } of plan) {
+    const msg = { title: n.t.replace("{place}", place ?? "Bu yerin"), body: n.b, url: "./?go=" + n.go };
+    if (!o.dry) {
+      const r = await sendToR([who], msg);
+      await sendToR(["admin"], { ...msg, title: `📋 ${who}-a getdi: ${msg.title}` });
+      const ps = state[who] ?? { slots: [], ids: [], last: 0 };
+      state[who] = { slots: [...ps.slots, vp.date + " " + slot].slice(-20), ids: [...ps.ids, n.id], last: now };
+      out.push({ who, id: n.id, status: r.map((x) => x.status) });
+    } else out.push({ who, id: n.id, title: msg.title });
+  }
+  if (!o.dry && out.length) await sb.from("kv").upsert({ key: "nudge:state", value: state, updated_at: new Date().toISOString() });
+  return { slot, place: place ?? null, sent: out, notSubscribed: people.filter((p) => !subbed.has(p)) };
+}
+const addMin = (hm: string, m: number) => { const [h, mm] = hm.split(":").map(Number); const t = h * 60 + mm + m; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
 
 // free text-to-speech as an MP3 file: the app plays it like music, so it is heard even when the iPhone is on silent
 async function freeTts(b: any): Promise<Response> {
@@ -696,7 +779,7 @@ function resolveUrl(offer: { url: string; store: string }, sources: { url: strin
 }
 async function logPrice(b: any, p: any, result: any) {
   const thumb = typeof b.thumb === "string" && b.thumb.startsWith("data:image/jpeg;base64,") && b.thumb.length < 60000 ? b.thumb : null;
-  await sb.from("price_log").insert({ ts: Date.now(), who: String(b.who ?? "").slice(0, 20), brand: String(p.brand ?? "").slice(0, 60), name: String(p.name_az || p.model || "").slice(0, 100), code: String(p.code ?? "").slice(0, 60), vienna_eur: Number(p.vienna_eur) > 0 ? Number(p.vienna_eur) : null, result, thumb });
+  await sb.from("price_log").insert({ ts: Date.now(), who: String(b.who ?? "").slice(0, 20), brand: String(p.brand ?? "").slice(0, 60), name: String(p.name_az || p.model || "").slice(0, 100), code: String(p.code ?? "").slice(0, 60), vienna_eur: Number(p.vienna_eur) > 0 ? Number(p.vienna_eur) : null, result, thumb, sbx: b.sbx === true });
 }
 
 /* ------------------------------------------------------------------ errors */

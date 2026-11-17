@@ -466,7 +466,7 @@ function waysTo(p) {
 }
 
 function renderHome() {
-  $("#hello").textContent = ME ? `Salam, ${ME} 👋` : "Salam 👋";
+  $("#hello").textContent = (ME ? `Salam, ${ME} 👋` : "Salam 👋") + (ADMIN ? " · 🧪 test" : "");
   renderWho();
   const now = vNow();
   // alerts: only warnings + departure
@@ -521,11 +521,23 @@ async function useFlush() {
 }
 setInterval(() => { if (!document.hidden) { track("beat"); useFlush(); } }, 5 * 60000);
 document.addEventListener("visibilitychange", () => { if (document.hidden) useFlush(); else track("open"); });
+/* ---------- deep links from notifications: ?go=map|tr|exp|plan|alb|mem|cam|price|menu|reco ---------- */
+function handleGo(go) {
+  if (!go) return;
+  track("go:" + go);
+  const pulse = sel => { goView("home"); const el = $(sel) && $(sel).closest(".tile, button"); if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 4000); } };
+  if (["map", "tr", "exp", "plan"].includes(go)) goView(go);
+  else if (go === "alb") { goView("plan"); const t = $('#moreTabs button[data-t="alb"]'); if (t) t.click(); }
+  else if (go === "mem") { goView("home"); const t = $('[data-act="book"]'); if (t) t.click(); }
+  else if (go === "cam") pulse("#camIn"); else if (go === "price") pulse("#priceIn"); else if (go === "menu") pulse("#menuIn");
+  else if (go === "reco") pulse("#recoBtn");
+}
+function goFromUrl() { const m = location.search.match(/[?&]go=([a-z]+)/); if (!m) return; history.replaceState(null, "", location.pathname + location.search.replace(/([?&])go=[a-z]+&?/, "$1").replace(/[?&]$/, "")); setTimeout(() => handleGo(m[1]), 400); }
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.go) handleGo(e.data.go); });
 /* ---------- push health: every open re-checks the real subscription and re-registers it on the server ---------- */
 S.push = "unknown";
 let pushChecked = 0;
 async function pushCheck(force) {
-  if (ADMIN) return; // the admin test link must never register as one of the girls
   if (!force && Date.now() - pushChecked < 10 * 60000) return; pushChecked = Date.now();
   const before = S.push;
   try {
@@ -536,7 +548,7 @@ async function pushCheck(force) {
       const reg = await navigator.serviceWorker.ready; if (!VAPID) await bookingsLoad();
       let sub = await reg.pushManager.getSubscription();
       if (!sub && VAPID) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) }); // permission already given: quietly renew
-      if (sub && ME) { await api("push.sub", { sub: sub.toJSON() }); S.push = "on"; } else S.push = "off";
+      if (sub && (ME || ADMIN)) { await api("push.sub", { sub: sub.toJSON() }); S.push = "on"; } else S.push = "off";
     }
   } catch (e) { if (S.push === "unknown") S.push = "off"; }
   LS.set("pushOn", S.push === "on");
@@ -544,7 +556,7 @@ async function pushCheck(force) {
 }
 function renderPushTip() {
   const box = $("#pushTip"); if (!box) return;
-  if (ADMIN || !ME || S.push === "on" || S.push === "unknown" || S.push === "unsupported") { box.innerHTML = ""; return; }
+  if ((!ME && !ADMIN) || S.push === "on" || S.push === "unknown" || S.push === "unsupported") { box.innerHTML = ""; return; }
   const msg = S.push === "install" ? "Bildiriş üçün tətbiqi <b>ana ekrana əlavə et</b> və oradan aç." : S.push === "denied" ? "Bildirişlər bağlıdır: iPhone <b>Ayarlar → Bildirişlər → Wien Bələdçi</b> → “İcazə ver”." : "Səhər brifinqi və xatırlatmalar üçün bildirişləri aç.";
   box.innerHTML = `<div class="card mt" style="display:flex;gap:12px;align-items:center;background:#FFF7E6"><span style="font-size:26px">🔔</span><div class="grow sm"><b>Bildirişlər gəlmir</b>${msg}</div>${S.push === "off" ? `<button class="btn pri s" id="pushGo">Aç</button>` : ""}</div>`;
   if ($("#pushGo")) $("#pushGo").onclick = async () => { await enablePush(); pushCheck(true); };
@@ -1498,7 +1510,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "28";
+const APPV = "29";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1754,7 +1766,7 @@ $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), p
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); track("open"); setTimeout(useFlush, 5000); setTimeout(() => recentPrices(true), 600);
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); track("open"); goFromUrl(); setTimeout(useFlush, 5000); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
   setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }

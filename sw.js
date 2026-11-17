@@ -1,5 +1,5 @@
 // Offline shell: network-first for app files, cache fallback. API calls are never cached.
-const CACHE = "wien-v21";
+const CACHE = "wien-v22";
 const SHELL = ["./", "index.html", "app.js", "data.js", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png",
   "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
@@ -28,5 +28,6 @@ self.addEventListener("push", e => {
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => { for (const c of cs) { if ("focus" in c) return c.focus(); } return self.clients.openWindow("./"); }));
+  const url = (e.notification.data && e.notification.data.url) || "./", go = (url.match(/[?&]go=([a-z]+)/) || [])[1];
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => { for (const c of cs) { if ("focus" in c) { if (go) c.postMessage({ go }); return c.focus(); } } return self.clients.openWindow(url); }));
 });
