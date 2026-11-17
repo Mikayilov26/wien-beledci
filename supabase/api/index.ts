@@ -135,12 +135,15 @@ Deno.serve(async (req) => {
         const key = String(b.key || ""), v = b.value;
         if (key === "hotel") {
           if (!(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
+        } else if (key === "prog") {
+          // shared trip progress (arrived / left hotel / skipped stops) — small object, any of the three may update it
+          if (!v || typeof v !== "object" || Array.isArray(v) || JSON.stringify(v).length > 30000) return json({ error: "invalid" }, 400);
         } else if (LOC_KEY.test(key)) {
           if (key !== "loc:" + who) return json({ error: "forbidden" }, 403);
           if (v !== null && !(v && typeof v.lat === "number" && typeof v.lng === "number")) return json({ error: "invalid" }, 400);
         } else return json({ error: "readonly" }, 400);
         if (v === null) { await sb.from("kv").delete().eq("key", key); return json({ ok: true }); }
-        const val = key === "hotel" ? { lat: v.lat, lng: v.lng, name: String(v.name ?? "").slice(0, 80), addr: String(v.addr ?? "").slice(0, 160), phone: String(v.phone ?? "").slice(0, 30), ci: String(v.ci ?? "").slice(0, 30), co: String(v.co ?? "").slice(0, 30), note: String(v.note ?? "").slice(0, 300) }
+        const val = key === "prog" ? v : key === "hotel" ? { lat: v.lat, lng: v.lng, name: String(v.name ?? "").slice(0, 80), addr: String(v.addr ?? "").slice(0, 160), phone: String(v.phone ?? "").slice(0, 30), ci: String(v.ci ?? "").slice(0, 30), co: String(v.co ?? "").slice(0, 30), note: String(v.note ?? "").slice(0, 300) }
           : { lat: v.lat, lng: v.lng, acc: Number(v.acc) || 0, ts: Date.now() };
         const { error } = await sb.from("kv").upsert({ key, value: val, updated_at: new Date().toISOString() });
         if (error) throw error;

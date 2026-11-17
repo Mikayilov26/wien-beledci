@@ -167,6 +167,7 @@ function onFix(p) {
   // ignore a much worse fix right after a good one (iOS sometimes mixes in cell-tower positions)
   if (S.me && S.me.src === "gps" && S.me.acc && acc > Math.max(150, S.me.acc * 4) && Date.now() - S.me.ts < 45000) return;
   if (!setMe(c.latitude, c.longitude, "gps", acc)) return;
+  try { progFromGps(c.latitude, c.longitude); } catch (e) {}
   if (!gpsCentered && map && !S.dest && $("#v-map").classList.contains("on")) { gpsCentered = true; mapGo(c.latitude, c.longitude, Math.max(map.getZoom(), 15.5)); }
   if (acc > 600 && !roughWarned) { roughWarned = true; setTimeout(() => { if (S.me && S.me.acc > 600) toast("📍 Yer təxminidir (±" + Math.round(S.me.acc) + " m). iPhone: Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “Dəqiq məkan” aç", 7000); }, 20000); }
 }
@@ -242,12 +243,13 @@ async function sync() {
     S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai); applyWho(j, false);
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
+    if (j.kv && j.kv.prog) progMerge(j.kv.prog);
     if (j.kv && j.kv.hotel) { const hc = JSON.stringify(j.kv.hotel) !== JSON.stringify(S.hotel); S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); if (hc) mapHotel(); }
     S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
     await flushPending();
   } catch (e) { S.online = false; if (e.code === "forbidden" || e.code === "no_user") { syncing = false; return gate("Bu link işləmir. Kənanın göndərdiyi şəxsi linki yenidən aç."); } }
   finally { syncing = false; }
-  const sig = JSON.stringify([S.expenses.length, S.expenses[0] && S.expenses[0].id, S.expenses.reduce((a, e) => a + (+e.eur || 0) + (e.paid ? 1 : 0), 0), S.live && S.live.updated, S.pending.length, S.online]);
+  const sig = JSON.stringify([JSON.stringify(S.prog).length, S.prog.q, S.expenses.length, S.expenses[0] && S.expenses[0].id, S.expenses.reduce((a, e) => a + (+e.eur || 0) + (e.paid ? 1 : 0), 0), S.live && S.live.updated, S.pending.length, S.online]);
   if (sig === lastSyncSig) return; lastSyncSig = sig;
   renderSafe();
 }
@@ -325,6 +327,144 @@ $$("#convQuick [data-q]").forEach(b => b.onclick = () => { $("#convIn").value = 
 $("#convCur").onclick = () => { convCur = convCur === "EUR" ? "AZN" : "EUR"; LS.set("convCur", convCur); renderConv(); };
 
 /* ---------- home ---------- */
+/* ---------- live progress: the plan follows reality (GPS first, one tap as fallback, shared by all three) ---------- */
+const VIE = { lat: 48.1103, lng: 16.5697, name: "Vyana hava limanı (VIE) Terminal 1" };
+const FIXED_DAY = "2026-11-20"; // flight day: times never move
+S.prog = LS.get("prog", null) || { a: {}, skip: {}, dis: {}, q: 0 };
+const iKey = it => it[0] + "|" + it[1];
+const fmtHM = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const vMinOf = ts => { const d = new Date(ts), o = {}; new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d).forEach(p => o[p.type] = p.value); return (+o.hour % 24) * 60 + +o.minute; };
+function progMerge(srv) {
+  if (!srv || typeof srv !== "object") return;
+  const P = S.prog;
+  Object.keys(srv.a || {}).forEach(d => { const have = new Set((P.a[d] || []).map(x => x.k + "@" + x.t)); P.a[d] = (P.a[d] || []).concat((srv.a[d] || []).filter(x => !have.has(x.k + "@" + x.t))).sort((x, y) => x.t - y.t).slice(-30); });
+  Object.keys(srv.skip || {}).forEach(d => { P.skip[d] = [...new Set((P.skip[d] || []).concat(srv.skip[d] || []))]; });
+  Object.keys(srv.unskip || {}).forEach(d => { const u = new Set(srv.unskip[d] || []); P.unskip = P.unskip || {}; P.unskip[d] = [...new Set((P.unskip[d] || []).concat(srv.unskip[d] || []))]; P.skip[d] = (P.skip[d] || []).filter(k => !u.has(k)); });
+  Object.keys(srv.dis || {}).forEach(d => { P.dis[d] = Math.max(P.dis[d] || 0, srv.dis[d] || 0); });
+  P.q = Math.max(P.q || 0, srv.q || 0);
+  LS.set("prog", P);
+}
+let progT = null;
+function progSave() {
+  LS.set("prog", S.prog);
+  clearTimeout(progT); progT = setTimeout(() => api("kv.set", { key: "prog", value: S.prog }).catch(() => {}), 800);
+}
+function anchor(date, k, plannedMin, ts) {
+  const L = S.prog.a[date] = S.prog.a[date] || [];
+  if (k !== "still" && k !== "reset" && L.some(x => x.k === k)) return false;
+  L.push({ k, p: plannedMin, t: ts || Date.now() }); progSave(); return true;
+}
+const hasA = (date, k) => (S.prog.a[date] || []).some(x => x.k === k);
+function dayShift(date) {
+  if (date === FIXED_DAY) return 0;
+  const L = S.prog.a[date] || []; if (!L.length) return 0;
+  const last = L.reduce((a, b) => (b.t > a.t ? b : a));
+  if (last.k === "reset") return 0;
+  let s = Math.round((vMinOf(last.t) - last.p) / 5) * 5;
+  s = Math.max(-60, Math.min(240, s));
+  return Math.abs(s) < 10 ? 0 : s;
+}
+function lastAnchorP(date) { const L = S.prog.a[date] || []; return L.length ? L.reduce((a, b) => (b.t > a.t ? b : a)).p : -1; }
+// the plan of a day as it stands now: adjusted time, done, skipped
+function effPlan(date) {
+  const day = PLAN.find(d => d.d === date); if (!day) return [];
+  const sh = dayShift(date), ap = lastAnchorP(date), skip = new Set(S.prog.skip[date] || []);
+  const visited = new Set((S.prog.a[date] || []).filter(x => x.k.startsWith("v:")).map(x => x.k.slice(2)));
+  return day.items.map(it => {
+    const o = toMin(it[0]), fixed = it[4] === 1 || date === FIXED_DAY, moved = !fixed && sh && o > ap;
+    return { it, o, m: moved ? o + sh : o, moved, fixed, skip: skip.has(iKey(it)), done: !!(it[3] && visited.has(it[3])) };
+  });
+}
+function nextEff(date, mins) {
+  const L = effPlan(date).filter(x => !x.skip && !x.done);
+  return L.find(x => x.m >= mins - 10) || null;
+}
+// automatic detection from GPS (no questions)
+let nearStop = null, progLast = 0, wasAtHotel = LS.get("wasAtHotel", "");
+function progFromGps(lat, lng) {
+  if (Date.now() - progLast < 30000) return; progLast = Date.now();
+  const now = vNow(), d = now.date, me = { lat, lng };
+  if (!PLAN.some(x => x.d === d)) return;
+  const nearHotel = S.hotel && dist(me, S.hotel) < 150;
+  if (d === "2026-11-17") {
+    if (!hasA(d, "land") && now.mins >= 615 && dist(me, VIE) < 2500) anchor(d, "land", 660);
+    if (!hasA(d, "hotel") && nearHotel) { if (!hasA(d, "land")) anchor(d, "land", 660, Date.now() - 1); anchor(d, "hotel", 780); }
+  }
+  if (nearHotel) { wasAtHotel = d; LS.set("wasAtHotel", d); }
+  const out = { "2026-11-18": 525, "2026-11-19": 540 }[d];
+  if (out && !hasA(d, "out") && wasAtHotel === d && !nearHotel && now.mins >= 420 && now.mins <= 720 && S.hotel && dist(me, S.hotel) > 300) anchor(d, "out", out);
+  // a plan stop counts as "visited" only after staying near it for 5+ minutes (walking past does not count)
+  const cand = effPlan(d).find(x => { const id = x.it[3]; return id && id !== "hotel" && !/^u-/.test(id) && byId[id] && !x.done && !x.skip && Math.abs(x.o - now.mins) < 180 && dist(me, byId[id]) < 90; });
+  if (!cand) { nearStop = null; return; }
+  if (!nearStop || nearStop.id !== cand.it[3]) { nearStop = { id: cand.it[3], since: Date.now() }; return; }
+  if (Date.now() - nearStop.since >= 5 * 60000) anchor(d, "v:" + cand.it[3], cand.o, nearStop.since);
+}
+// one-tap question when there is no GPS
+function progQuestion(now) {
+  if (S.gps === "on" || Date.now() - (S.prog.q || 0) < 45 * 60000) return "";
+  const d = now.date, m = now.mins;
+  let ask = "";
+  if (d === "2026-11-17" && m >= 645 && m <= 900 && !hasA(d, "hotel")) ask = hasA(d, "land") ? "🏨 Otelə çatdınız?" : "✈️ Vyanaya endiniz? Hazırda haradasınız?";
+  else if ((d === "2026-11-18" || d === "2026-11-19") && m >= 510 && m <= 660 && !hasA(d, "out")) ask = "🚪 Hazırda haradasınız?";
+  else if (d === FIXED_DAY && m >= 510 && m <= 630 && !hasA(d, "airport")) ask = "🛫 Hazırda haradasınız?";
+  if (!ask) return "";
+  return `<div class="qcard"><b>${ask}</b><span class="s2">Bir toxunuş kifayətdir — plan özü yenilənəcək.</span><div class="qbtns">
+    <button data-q="air">✈️ Hava limanı</button><button data-q="road">🚗 Yoldayıq</button><button data-q="hotel">🏨 Oteldə</button><button data-q="city">📍 Şəhərdə</button></div></div>`;
+}
+function progAnswer(a) {
+  const now = vNow(), d = now.date;
+  S.prog.q = Date.now();
+  if (d === "2026-11-17") {
+    if (a === "air" && !hasA(d, "land")) anchor(d, "land", 660);
+    if (a === "road" && !hasA(d, "land")) anchor(d, "land", 660, Date.now() - 20 * 60000);
+    if (a === "hotel") { if (!hasA(d, "land")) anchor(d, "land", 660, Date.now() - 50 * 60000); anchor(d, "hotel", 780); }
+  } else if (d === FIXED_DAY) {
+    if (a === "air") anchor(d, "airport", 600);
+    if (a === "hotel") { S.lateHotel = Date.now(); }
+  } else {
+    const out = { "2026-11-18": 525, "2026-11-19": 540 }[d];
+    if (out) { if (a === "road" || a === "city") anchor(d, "out", out); else if (a === "hotel" && now.mins > out) anchor(d, "still", out); }
+  }
+  progSave(); renderHome(); if ($("#v-plan").classList.contains("on")) renderPlan(); toast("✓ Qeyd olundu — plan yeniləndi");
+}
+// cards on top of the home screen: shift info, late warning, "you won't make it" suggestion
+function progCards(now) {
+  const d = now.date; if (!PLAN.some(x => x.d === d)) return "";
+  let h = progQuestion(now);
+  const sh = dayShift(d);
+  if (sh) h += `<div class="shbar">⏱ Plan real vaxta görə <b>${sh > 0 ? "+" : ""}${sh} dəq</b> sürüşdü <button class="lnk" id="shReset">Geri qaytar</button></div>`;
+  if (d === FIXED_DAY && now.mins >= 520 && now.mins <= 660 && !hasA(d, "airport") && ((S.me && S.hotel && S.me.src === "gps" && dist(S.me, S.hotel) < 200) || (S.lateHotel && Date.now() - S.lateHotel < 30 * 60000)))
+    h += `<div class="alert"><span>🚕</span><div><b>Hava limanına getmək vaxtıdır!</b><span class="mute">Uçuş 12:00. Ən sürətlisi taksi ilə birbaşa hava limanına (~25–30 dəq, ~40–50 €).</span><div class="row mt"><a class="btn s pri" href="${uberLink(VIE)}" target="_blank" rel="noopener">🚕 Uber → Hava limanı</a><a class="btn s" href="tel:+43140100">📞 Taxi 40100</a></div></div></div>`;
+  if (sh > 45 && (S.prog.dis[d] || 0) < sh) {
+    const late = effPlan(d).filter(x => !x.skip && !x.done && !x.fixed && x.moved && x.m > 22 * 60 && x.it[3] && x.it[3] !== "hotel" && !/^u-/.test(x.it[3]));
+    if (late.length) h += `<div class="qcard"><b>Bu gün hamısına çatmayacaqsınız</b><span class="s2">Plan ${sh} dəq gecikir. Bunları buraxaq? ${late.map(x => esc(short(byId[x.it[3]] ? byId[x.it[3]].name : x.it[1]))).join(", ")}</span>
+      <div class="qbtns"><button data-skipall="${late.map(x => encodeURIComponent(iKey(x.it))).join(",")}">✓ Bəli, burax</button><button data-keep="1">Xeyr, qalsın</button></div></div>`;
+  }
+  return h;
+}
+function bindProgCards(box) {
+  box.querySelectorAll("[data-q]").forEach(b => b.onclick = () => progAnswer(b.dataset.q));
+  const r = box.querySelector("#shReset"); if (r) r.onclick = () => { anchor(vNow().date, "reset", vNow().mins); renderHome(); toast("Plan əvvəlki saatlara qaytarıldı"); };
+  box.querySelectorAll("[data-skipall]").forEach(b => b.onclick = () => { const d = vNow().date; S.prog.skip[d] = [...new Set((S.prog.skip[d] || []).concat(b.dataset.skipall.split(",").map(decodeURIComponent)))]; progSave(); renderHome(); toast("Buraxıldı — Plan bölməsindən qaytara bilərsən"); });
+  box.querySelectorAll("[data-keep]").forEach(b => b.onclick = () => { const d = vNow().date; S.prog.dis[d] = dayShift(d); progSave(); renderHome(); });
+}
+function toggleSkip(date, key) {
+  const L = S.prog.skip[date] = S.prog.skip[date] || [];
+  const i = L.indexOf(key);
+  if (i >= 0) { L.splice(i, 1); S.prog.unskip = S.prog.unskip || {}; (S.prog.unskip[date] = S.prog.unskip[date] || []).push(key); }
+  else { L.push(key); if (S.prog.unskip && S.prog.unskip[date]) S.prog.unskip[date] = S.prog.unskip[date].filter(k => k !== key); }
+  progSave();
+}
+// three ways to the next stop, from where you are now
+function waysTo(p) {
+  const from = S.me && S.me.src === "gps" ? S.me : null;
+  const d = from ? dist(from, p) : 0;
+  const t = from ? { taxi: Math.round(d * 1.4 / 400) + 4, tr: Math.round(d * 1.3 / 330) + 8, walk: walkMin(d) } : null;
+  return `<div class="ways"><a href="${uberLink(p)}" target="_blank" rel="noopener">🚕<b>Taksi</b>${t ? `<span>~${t.taxi} dəq</span>` : ""}</a>
+    <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=transit" target="_blank" rel="noopener">🚇<b>Metro</b>${t ? `<span>~${t.tr} dəq</span>` : ""}</a>
+    <a href="#" data-walk="${p.id}">🚶<b>Piyada</b>${t ? `<span>~${t.walk} dəq</span>` : ""}</a></div>`;
+}
+
 function renderHome() {
   $("#hello").textContent = ME ? `Salam, ${ME} 👋` : "Salam 👋";
   renderWho();
@@ -341,9 +481,9 @@ function renderHome() {
   const day = PLAN.find(d => d.d === now.date);
   let nx = "";
   if (day) {
-    const next = day.items.find(i => i[0] >= now.time);
-    nx = next ? `<div class="sm dim">Sıradakı · ${day.t}</div><div class="next" style="margin-top:6px"><span class="t">${next[0]}</span><div class="grow"><b>${esc(next[1])}</b><span class="s2">${esc(next[2])}</span></div>${next[3] ? `<button class="btn s pri" data-route="${next[3]}">Get</button>` : ""}</div>`
-      : `<div class="sm dim">${day.t}</div><b>Bugünkü plan bitdi 🌙</b>`;
+    const nxe = nextEff(now.date, now.mins), next = nxe && nxe.it, np = next && next[3] && next[3] !== "hotel" ? byId[next[3]] : (next && next[3] === "hotel" ? Object.assign({ id: "hotel" }, S.hotel) : null);
+    nx = progCards(now) + (next ? `<div class="sm dim">Sıradakı · ${day.t}</div><div class="next" style="margin-top:6px"><span class="t">${nxe.moved ? "~" : ""}${fmtHM(nxe.m)}</span><div class="grow"><b>${esc(next[1])}</b><span class="s2">${esc(next[2])}</span></div>${!nxe.fixed ? `<button class="btn s" data-skipnext="${encodeURIComponent(iKey(next))}" title="Keç">Keç</button>` : ""}</div>${np && np.lat ? waysTo(np) : ""}`
+      : `<div class="sm dim">${day.t}</div><b>Bugünkü plan bitdi 🌙</b>`);
   } else {
     const left = Math.max(0, Math.round((Date.parse("2026-11-17T09:30:00+04:00") - Date.now()) / 60000)), dd = Math.floor(left / 1440), hh = Math.floor(left % 1440 / 60);
     const pk = packDone();
@@ -353,6 +493,9 @@ function renderHome() {
   $("#nextCard").innerHTML = nx;
   if ($("#packGo")) $("#packGo").onclick = () => { moreTab = "pack"; goView("plan"); };
   $$("#nextCard [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
+  bindProgCards($("#nextCard"));
+  $$("#nextCard [data-skipnext]").forEach(b => b.onclick = () => { toggleSkip(now.date, decodeURIComponent(b.dataset.skipnext)); renderHome(); toast("Keçildi — Plan bölməsindən qaytara bilərsən"); });
+  $$("#nextCard [data-walk]").forEach(a => a.onclick = e => { e.preventDefault(); const id = a.dataset.walk; goView("map"); routeTo(id === "hotel" ? Object.assign({ id: "hotel", name: S.hotel.name, cat: "tarix", d: "Otelimiz" }, S.hotel) : byId[id]); });
   // weather + rates
   const wx = S.live.weather || [];
   $("#wxCard").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
@@ -1217,14 +1360,16 @@ function renderPlan() {
   const now = vNow();
   $("#dayTabs").innerHTML = PLAN.map((d, i) => `<button data-d="${i}" class="${i === planDay ? "on" : ""}">${d.t.split(" ")[0]} noy${d.d === now.date ? " · bu gün" : ""}</button>`).join("");
   $$("#dayTabs button").forEach(b => b.onclick = () => { planDay = +b.dataset.d; renderPlan(); });
-  const d = PLAN[planDay]; const today = d.d === now.date; const nextIdx = today ? d.items.findIndex(i => i[0] >= now.time) : -1;
+  const d = PLAN[planDay]; const today = d.d === now.date; const eff = effPlan(d.d); const nxe = today ? nextEff(d.d, now.mins) : null; const nextIdx = nxe ? d.items.indexOf(nxe.it) : -1; const shP = dayShift(d.d);
   $("#planBody").innerHTML = `<h2 style="font-size:23px">${esc(d.title)}</h2><div class="sm dim" style="margin-bottom:10px">${d.t}, ${d.w}</div>
-   <div class="card"><ul class="tl">${d.items.map((it, k) => { const p = it[3] ? byId[it[3]] : null; return `<li class="${k === nextIdx ? "now" : ""}"><div class="t">${it[0]}</div><div class="x2"><b>${esc(it[1])}</b><span>${esc(it[2])}</span>${p ? `<div style="margin-top:6px"><a class="lnk" data-route="${p.id}">🧭 Get</a><a class="lnk" data-tell="${p.id}">🔊 Hekayə</a>${p.pid ? `<a class="lnk" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}</div>` : ""}</div></li>`; }).join("")}</ul></div>
+   ${shP ? `<div class="shbar">⏱ Saatlar real vaxta görə <b>${shP > 0 ? "+" : ""}${shP} dəq</b> sürüşdürülüb</div>` : ""}
+   <div class="card"><ul class="tl">${d.items.map((it, k) => { const p = it[3] ? byId[it[3]] : null, e = eff[k]; return `<li class="${k === nextIdx ? "now" : ""}${e.skip ? " skip" : ""}${e.done ? " done" : ""}"><div class="t">${e.moved ? "~" + fmtHM(e.m) + `<s>${it[0]}</s>` : it[0]}</div><div class="x2"><b>${e.done ? "✓ " : ""}${esc(it[1])}</b>${!e.fixed && (e.skip || !e.done) ? `<a class="lnk sk" data-skip="${encodeURIComponent(iKey(it))}">${e.skip ? "↩︎ Qaytar" : "Keç"}</a>` : ""}<span>${esc(it[2])}</span>${p ? `<div style="margin-top:6px"><a class="lnk" data-route="${p.id}">🧭 Get</a><a class="lnk" data-tell="${p.id}">🔊 Hekayə</a>${p.pid ? `<a class="lnk" href="${gPlace(p)}" target="_blank" rel="noopener">Google</a>` : ""}</div>` : ""}</div></li>`; }).join("")}</ul></div>
    ${planDay === 3 ? `<div class="alert mt"><span>✈️</span><div><b>Uçuş 12:00 (Vyana vaxtı), Terminal 1 → Bakı 19:05</b><span class="mute">10:00-da hava limanında ol. CAT avtobusu Wien Mitte (Marxergasse 1b). Wien Mitte S-Bahn bağlıdır, U3/U4 işləyir.</span></div></div>` : ""}`;
   if (d.d <= now.date) { $("#planBody").insertAdjacentHTML("beforeend", summaryHTML(d.d, d.d === now.date ? "📊 Bu gün indiyədək" : "📊 Günün xülasəsi")); $$("#planBody [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share)); }
   const bks = (typeof BOOK !== "undefined" ? BOOK : []).filter(b => vDate(b.at) === d.d);
   if (bks.length) $("#planBody .card").insertAdjacentHTML("afterbegin", `<div class="sm dim" style="font-weight:700">🎟 Rezervlər</div><ul class="tl" style="margin-bottom:8px">${bks.map(b => `<li><div class="t">${hhmm(b.at)}</div><div class="x2"><b>${esc(b.title)}</b><span>${esc(b.place || "")}${b.note ? " · " + esc(b.note) : ""}</span></div></li>`).join("")}</ul>`);
   $$("#planBody [data-route]").forEach(a => a.onclick = () => { goView("map"); routeTo(byId[a.dataset.route]); });
+  $$("#planBody [data-skip]").forEach(a => a.onclick = () => { toggleSkip(d.d, decodeURIComponent(a.dataset.skip)); renderPlan(); });
   $$("#planBody [data-tell]").forEach(a => a.onclick = () => tellAbout(byId[a.dataset.tell]));
 }
 $$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
@@ -1313,7 +1458,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "25";
+const APPV = "26";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
