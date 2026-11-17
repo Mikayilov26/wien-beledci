@@ -257,7 +257,7 @@ let lastSyncSig = "", renderLater = false;
 const typing = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
 function renderSafe() {
   if (typing()) { renderLater = true; return; }
-  renderLater = false; renderExpData(); renderHome(); mapAlerts();
+  renderLater = false; renderExpData(); renderHomeSoon(); mapAlerts();
 }
 document.addEventListener("focusout", () => setTimeout(() => { if (renderLater && !typing()) renderSafe(); }, 300));
 async function flushPending() {
@@ -465,6 +465,20 @@ function waysTo(p) {
     <a href="#" data-walk="${p.id}">🚶<b>Piyada</b>${t ? `<span>~${t.walk} dəq</span>` : ""}</a></div>`;
 }
 
+/* ---------- calm rendering: never swap content under a finger or during a scroll, and only when it really changed ---------- */
+let touchOn = false, quietAt = 0;
+addEventListener("touchstart", () => { touchOn = true; }, { passive: true, capture: true });
+addEventListener("touchend", () => { touchOn = false; quietAt = Date.now() + 700; }, { passive: true, capture: true });
+addEventListener("touchcancel", () => { touchOn = false; quietAt = Date.now() + 700; }, { passive: true, capture: true });
+addEventListener("scroll", () => { quietAt = Date.now() + 500; }, { passive: true, capture: true });
+const userBusy = () => touchOn || Date.now() < quietAt;
+function setHTML(el, html) { if (typeof el === "string") el = $(el); if (el && el.__h !== html) { el.innerHTML = html; el.__h = html; } }
+let homeQueued = false;
+function renderHomeSoon() { // background updates (sync, GPS, timers) go through here
+  if (homeQueued) return; homeQueued = true;
+  const go = () => { if (userBusy() || typing()) return setTimeout(go, 300); homeQueued = false; renderHome(); };
+  setTimeout(go, 0);
+}
 function renderHome() {
   $("#hello").textContent = (ME ? `Salam, ${ME} 👋` : "Salam 👋") + (ADMIN ? " · 🧪 test" : "");
   renderWho();
@@ -476,7 +490,7 @@ function renderHome() {
     const left = toMin("08:40") - now.mins;
     if (left > -150) a = `<div class="alert"><span>✈️</span><div><b>${left > 0 ? `Otelden çıxmağa ${Math.floor(left / 60)} saat ${left % 60} dəq qalıb` : "İndi hava limanına yola düş!"}</b><span class="mute">Uçuş 12:00, Terminal 1. Wien Mitte → CAT avtobusu. 10:00-da hava limanında ol.${expAll().some(e => e.tf) ? ` 🧾 ${expAll().filter(e => e.tf).length} tax-free çekin var — əvvəl gömrükdə möhürlət (+20 dəq).` : ""}</span></div></div>` + a;
   }
-  $("#alertsBar").innerHTML = (typeof upcomingAlert === "function" ? upcomingAlert() : "") + a;
+  let alertsHTML = (typeof upcomingAlert === "function" ? upcomingAlert() : "") + a;
   // next plan item
   const day = PLAN.find(d => d.d === now.date);
   let nx = "";
@@ -490,7 +504,7 @@ function renderHome() {
     nx = now.date < "2026-11-17" ? `<div class="sm dim">Uçuşa qalıb</div><div class="cd"><b>${dd}</b><span>gün</span><b>${hh}</b><span>saat</span></div><b>17 noyabr: Bakıdan 09:30 ✈️ → Vyana 11:00</b><span class="s2">Bakı hava limanında ən gec 07:00-da olun · Dönüş: 20 noyabr, Vyana 12:00 (Terminal 1) → Bakı 19:05</span>
       <button class="btn wide mt" id="packGo">🧳 Hazırlıq siyahısı · ${pk.n}/${pk.t} ✓</button>` : `<b>Xoş səfər idi! 💛</b>`;
   }
-  $("#nextCard").innerHTML = nx;
+  setHTML("#nextCard", nx);
   if ($("#packGo")) $("#packGo").onclick = () => { moreTab = "pack"; goView("plan"); };
   $$("#nextCard [data-route]").forEach(b => b.onclick = () => { goView("map"); routeTo(byId[b.dataset.route]); });
   bindProgCards($("#nextCard"));
@@ -498,33 +512,34 @@ function renderHome() {
   $$("#nextCard [data-walk]").forEach(a => a.onclick = e => { e.preventDefault(); const id = a.dataset.walk; goView("map"); routeTo(id === "hotel" ? Object.assign({ id: "hotel", name: S.hotel.name, cat: "tarix", d: "Otelimiz" }, S.hotel) : byId[id]); });
   // weather + rates
   const wx = S.live.weather || [];
-  $("#wxCard").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
-    (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`;
+  setHTML("#wxCard", `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
+    (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`);
   renderConv(); renderInstall(); renderPushTip();
   const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
   const tripDay = now.date >= "2026-11-17" && now.date <= "2026-11-20";
   const wxToday = (S.live.weather || [])[0], rainy = wxToday && /yağış|qar|leysan/i.test(wxToday.s || "");
-  if (rainy && tripDay) $("#alertsBar").insertAdjacentHTML("beforeend", `<div class="alert" style="background:#EEF2FF"><span>🌧</span><div><b>Bu gün ${esc(wxToday.s)} — qapalı yerlərə üstünlük ver</b><span class="mute">Ticarət mərkəzləri, muzeylər. <a href="#" id="rainShop">🛍 Alış-veriş bələdçisi ›</a></span></div></div>`);
+  if (rainy && tripDay) alertsHTML += (`<div class="alert" style="background:#EEF2FF"><span>🌧</span><div><b>Bu gün ${esc(wxToday.s)} — qapalı yerlərə üstünlük ver</b><span class="mute">Ticarət mərkəzləri, muzeylər. <a href="#" id="rainShop">🛍 Alış-veriş bələdçisi ›</a></span></div></div>`);
+  setHTML("#alertsBar", alertsHTML);
   if ($("#rainShop")) $("#rainShop").onclick = e => { e.preventDefault(); shopGuide(); };
-  $("#daySum").innerHTML = tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : (tripDay && now.mins < 12 * 60) || /[?&]brief=1/.test(location.search) ? briefHTML(now.date) : "";
+  setHTML("#daySum", tripDay && now.mins >= 18 * 60 ? summaryHTML(now.date, "🌙 Bu günün xülasəsi") : (tripDay && now.mins < 12 * 60) || /[?&]brief=1/.test(location.search) ? briefHTML(now.date) : "");
   $$("#daySum [data-share]").forEach(b => b.onclick = () => shareSummary(b.dataset.share));
-  $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
+  setHTML("#todaySpend", tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "");
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
 /* ---------- usage stats (who · which section · when — no content) for the end-of-trip report ---------- */
 const USEQ = LS.get("useq", []);
-function track(e) { if (ADMIN || !ME) return; USEQ.push({ e, t: Date.now() }); if (USEQ.length > 200) USEQ.splice(0, USEQ.length - 200); LS.set("useq", USEQ); }
+function useTrack(e) { if (ADMIN || !ME) return; USEQ.push({ e, t: Date.now() }); if (USEQ.length > 200) USEQ.splice(0, USEQ.length - 200); LS.set("useq", USEQ); }
 async function useFlush() {
   if (ADMIN || !ME || !USEQ.length || !navigator.onLine) return;
   const batch = USEQ.slice(0, 60);
   try { await api("use", { ev: batch }); USEQ.splice(0, batch.length); LS.set("useq", USEQ); } catch (e) { /* retry later */ }
 }
-setInterval(() => { if (!document.hidden) { track("beat"); useFlush(); } }, 5 * 60000);
-document.addEventListener("visibilitychange", () => { if (document.hidden) useFlush(); else track("open"); });
+setInterval(() => { if (!document.hidden) { useTrack("beat"); useFlush(); } }, 5 * 60000);
+document.addEventListener("visibilitychange", () => { if (document.hidden) useFlush(); else useTrack("open"); });
 /* ---------- deep links from notifications: ?go=map|tr|exp|plan|alb|mem|cam|price|menu|reco ---------- */
 function handleGo(go) {
   if (!go) return;
-  track("go:" + go);
+  useTrack("go:" + go);
   const pulse = sel => { goView("home"); const el = $(sel) && $(sel).closest(".tile, button"); if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 4000); } };
   if (["map", "tr", "exp", "plan"].includes(go)) goView(go);
   else if (go === "alb") { goView("plan"); const t = $('#moreTabs button[data-t="alb"]'); if (t) t.click(); }
@@ -556,17 +571,17 @@ async function pushCheck(force) {
 }
 function renderPushTip() {
   const box = $("#pushTip"); if (!box) return;
-  if ((!ME && !ADMIN) || S.push === "on" || S.push === "unknown" || S.push === "unsupported") { box.innerHTML = ""; return; }
+  if ((!ME && !ADMIN) || S.push === "on" || S.push === "unknown" || S.push === "unsupported") { setHTML(box, ""); return; }
   const msg = S.push === "install" ? "Bildiriş üçün tətbiqi <b>ana ekrana əlavə et</b> və oradan aç." : S.push === "denied" ? "Bildirişlər bağlıdır: iPhone <b>Ayarlar → Bildirişlər → Wien Bələdçi</b> → “İcazə ver”." : "Səhər brifinqi və xatırlatmalar üçün bildirişləri aç.";
-  box.innerHTML = `<div class="card mt" style="display:flex;gap:12px;align-items:center;background:#FFF7E6"><span style="font-size:26px">🔔</span><div class="grow sm"><b>Bildirişlər gəlmir</b>${msg}</div>${S.push === "off" ? `<button class="btn pri s" id="pushGo">Aç</button>` : ""}</div>`;
+  setHTML(box, `<div class="card mt" style="display:flex;gap:12px;align-items:center;background:#FFF7E6"><span style="font-size:26px">🔔</span><div class="grow sm"><b>Bildirişlər gəlmir</b>${msg}</div>${S.push === "off" ? `<button class="btn pri s" id="pushGo">Aç</button>` : ""}</div>`);
   if ($("#pushGo")) $("#pushGo").onclick = async () => { await enablePush(); pushCheck(true); };
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pushCheck(); });
 const vDate = ts => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna" }).format(new Date(ts));
 function renderInstall() {
   const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-  if (standalone || LS.get("instDone", false)) { $("#installTip").innerHTML = ""; return; }
-  $("#installTip").innerHTML = `<div class="card mt" style="display:flex;gap:12px;align-items:center"><span style="font-size:26px">📲</span><div class="grow sm"><b>Ana ekrana əlavə et</b>Safari-də aşağıda <b>Paylaş ⬆︎</b> → <b>“Ana ekrana əlavə et”</b>.</div><button class="x" style="position:static" id="instX">×</button></div>`;
+  if (standalone || LS.get("instDone", false)) { setHTML("#installTip", ""); return; }
+  setHTML("#installTip", `<div class="card mt" style="display:flex;gap:12px;align-items:center"><span style="font-size:26px">📲</span><div class="grow sm"><b>Ana ekrana əlavə et</b>Safari-də aşağıda <b>Paylaş ⬆︎</b> → <b>“Ana ekrana əlavə et”</b>.</div><button class="x" style="position:static" id="instX">×</button></div>`);
   $("#instX").onclick = () => { LS.set("instDone", true); renderInstall(); };
 }
 $$("[data-go]").forEach(b => b.onclick = () => goView(b.dataset.go));
@@ -1423,7 +1438,7 @@ function renderPlan() {
   $$("#planBody [data-skip]").forEach(a => a.onclick = () => { toggleSkip(d.d, decodeURIComponent(a.dataset.skip)); renderPlan(); });
   $$("#planBody [data-tell]").forEach(a => a.onclick = () => tellAbout(byId[a.dataset.tell]));
 }
-$$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; track("more:" + moreTab); $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
+$$("#moreTabs button").forEach(b => b.onclick = () => { moreTab = b.dataset.t; useTrack("more:" + moreTab); $$("#moreTabs button").forEach(x => x.classList.toggle("on", x === b)); renderMore(); });
 function renderMore() {
   $$("#moreTabs button").forEach(x => x.classList.toggle("on", x.dataset.t === moreTab));
   const plan = moreTab === "plan"; $("#morePlan").hidden = !plan; $("#moreBody").hidden = plan;
@@ -1496,7 +1511,7 @@ async function renderAlbum(B) {
 
 /* ---------- navigation ---------- */
 function goView(v) {
-  track("view:" + v);
+  useTrack("view:" + v);
   $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   $$(".view").forEach(x => x.classList.toggle("on", x.id === "v-" + v));
   if (v === "map") { initMap(); setTimeout(() => { if (map) { map.resize(); renderNear(); } }, 50); }
@@ -1510,8 +1525,10 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "29";
+const APPV = "30";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
+let pendingVersion = null;
+document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
 async function checkVersion() {
   try {
     const v = (await (await fetch("version.txt?t=" + Date.now(), { cache: "no-store" })).text()).trim();
@@ -1519,9 +1536,10 @@ async function checkVersion() {
     // reload at most once per 2 minutes for the same version (no loops), but keep trying until the new code is in
     const last = LS.get("reloadedFor", null), now = Date.now();
     if (last && last.v === v && now - last.t < 120000) return;
-    LS.set("reloadedFor", { v, t: now }); toast("🔄 Yeni versiya — yenilənir…");
     try { const rg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (rg) await rg.update(); } catch (e) {}
-    setTimeout(() => location.reload(), 700);
+    // never reload while she is looking at the screen: the new version is applied quietly when the app goes to the background
+    if (document.hidden) { LS.set("reloadedFor", { v, t: now }); location.reload(); }
+    else pendingVersion = v;
   } catch (e) {}
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
@@ -1766,9 +1784,9 @@ $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), p
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); track("open"); goFromUrl(); setTimeout(useFlush, 5000); setTimeout(() => recentPrices(true), 600);
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); { const b0 = JSON.stringify(BOOK); bookingsLoad().then(() => { if (JSON.stringify(BOOK) !== b0) renderHomeSoon(); pushCheck(true); }); } useTrack("open"); goFromUrl(); setTimeout(useFlush, 5000); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
-  setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
+  setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHomeSoon(); }, 60000);
 }
 (function boot() {
   S.code = readCode();

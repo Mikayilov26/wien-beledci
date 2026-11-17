@@ -1,5 +1,5 @@
 // Offline shell: network-first for app files, cache fallback. API calls are never cached.
-const CACHE = "wien-v22";
+const CACHE = "wien-v23";
 const SHELL = ["./", "index.html", "app.js", "data.js", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png",
   "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
@@ -15,7 +15,15 @@ self.addEventListener("fetch", e => {
   const immutable = (u.hostname === "unpkg.com" && /@\d/.test(u.pathname)) || (u.origin === self.location.origin && /[?&]v=/.test(u.search)) ||
     (u.hostname === "tiles.openfreemap.org" && /\.(pbf|png|json|webp)$/.test(u.pathname));
   if (immutable) { e.respondWith(fromCache(e.request).then(r => r || fetch(e.request).then(res => put(e.request, res)))); return; }
-  // 2) everything else (page, version.txt, map style): network-first, but fall back to the saved copy after 4 s
+  // 2) the app page itself: open instantly from the saved copy, refresh the copy in the background (a new version is used next time)
+  const isPage = e.request.mode === "navigate" || (u.origin === self.location.origin && (u.pathname.endsWith("/") || u.pathname.endsWith("index.html")));
+  if (isPage) {
+    const fresh = fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" }).then(res => put(e.request, res));
+    e.waitUntil(fresh.catch(() => {}));
+    e.respondWith(fromCache(e.request).then(r => r || withTimeout(fresh, 8000)).catch(() => fromCache(e.request)));
+    return;
+  }
+  // 3) everything else (version.txt, map style): network-first, but fall back to the saved copy after 4 s
   const net = u.origin === self.location.origin ? fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(e.request);
   e.respondWith(withTimeout(net.then(res => put(e.request, res)), u.pathname.endsWith("version.txt") ? 8000 : 4000)
     .catch(() => fromCache(e.request).then(r => r || net)));
