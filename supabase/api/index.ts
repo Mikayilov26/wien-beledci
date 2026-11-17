@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         if (ex.error) throw ex.error;
         if (kv.error) throw kv.error;
         const kvm: Record<string, unknown> = {};
-        for (const r of kv.data ?? []) kvm[r.key] = r.value;
+        for (const r of kv.data ?? []) if (r.key !== "pushlog") kvm[r.key] = r.value;
         return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
       }
 
@@ -268,6 +268,16 @@ Deno.serve(async (req) => {
         return json({ sent: n });
       }
 
+      case "push.diag": {
+        // admin only: send a test (or today's brief again) to chosen people and show what Apple/Google answered
+        if (!admin) return json({ error: "forbidden" }, 403);
+        const to = (Array.isArray(b.to) ? b.to : PEOPLE).filter((p: string) => PEOPLE.includes(p));
+        const { data: subs } = await sb.from("push_subs").select("who").in("who", to);
+        let msg: any = { title: "🔔 Wien Bələdçi", body: "Yoxlama bildirişi — bunu görürsənsə, bildirişlər işləyir ✓" };
+        if (b.brief) { const m = await briefMsg(vParts(Date.now()).date); if (m) msg = m; }
+        const res = b.dry ? [] : await sendToR(to, msg);
+        return json({ subscribed: (subs ?? []).map((x: any) => x.who), results: res });
+      }
       case "tts": return await freeTts(b);
       case "gt": return await freeTranslate(b);
       case "ai": return await aiText(b);
@@ -281,17 +291,32 @@ Deno.serve(async (req) => {
 });
 
 /* ------------------------------------------------------------------ free machine translation (no AI cost) */
-async function sendTo(people: string[], msg: { title: string; body: string; url?: string }): Promise<number> {
+type PushRes = { who: string; ep: string; status: number; err?: string };
+async function sendToR(people: string[], msg: { title: string; body: string; url?: string }): Promise<PushRes[]> {
   const pub = await cfg("vapid_pub"), priv = await cfg("vapid_priv");
-  if (!pub || !priv) return 0;
+  if (!pub || !priv) return [{ who: "-", ep: "", status: 0, err: "no_vapid" }];
   webpush.setVapidDetails("https://wien-beledci.onrender.com", pub, priv);
-  const { data } = await sb.from("push_subs").select("endpoint,sub").in("who", people);
-  let n = 0;
+  const { data } = await sb.from("push_subs").select("endpoint,sub,who").in("who", people);
+  const out: PushRes[] = [];
   for (const s of data ?? []) {
-    try { await webpush.sendNotification(s.sub, JSON.stringify(msg), { TTL: 3600 }); n++; }
-    catch (e: any) { if (e?.statusCode === 404 || e?.statusCode === 410) await sb.from("push_subs").delete().eq("endpoint", s.endpoint); }
+    const ep = String(s.endpoint).slice(0, 40);
+    try { const r: any = await webpush.sendNotification(s.sub, JSON.stringify(msg), { TTL: 6 * 3600, urgency: "high" }); out.push({ who: s.who, ep, status: r?.statusCode ?? 201 }); }
+    catch (e: any) {
+      out.push({ who: s.who, ep, status: e?.statusCode ?? -1, err: String(e?.body || e?.message || e).slice(0, 200) });
+      if (e?.statusCode === 404 || e?.statusCode === 410) await sb.from("push_subs").delete().eq("endpoint", s.endpoint);
+    }
   }
-  return n;
+  // keep the last 30 delivery results so problems are visible
+  try {
+    const { data: old } = await sb.from("kv").select("value").eq("key", "pushlog").maybeSingle();
+    const log = Array.isArray(old?.value) ? old!.value : [];
+    const add = out.length ? out.map((r) => ({ ...r, t: new Date().toISOString(), title: msg.title.slice(0, 40) })) : [{ who: people.join(","), ep: "", status: 0, err: "no_subscription", t: new Date().toISOString(), title: msg.title.slice(0, 40) }];
+    await sb.from("kv").upsert({ key: "pushlog", value: [...add, ...log].slice(0, 30), updated_at: new Date().toISOString() });
+  } catch { /* logging must never block sending */ }
+  return out;
+}
+async function sendTo(people: string[], msg: { title: string; body: string; url?: string }): Promise<number> {
+  return (await sendToR(people, msg)).filter((r) => r.status >= 200 && r.status < 300).length;
 }
 // ☀️ daily morning briefing (one push per trip day to everyone who enabled notifications)
 const BRIEF: Record<string, { at: string; title: string; items: string[] }> = {

@@ -500,7 +500,7 @@ function renderHome() {
   const wx = S.live.weather || [];
   $("#wxCard").innerHTML = `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
     (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`;
-  renderConv(); renderInstall();
+  renderConv(); renderInstall(); renderPushTip();
   const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
   const tripDay = now.date >= "2026-11-17" && now.date <= "2026-11-20";
   const wxToday = (S.live.weather || [])[0], rainy = wxToday && /yağış|qar|leysan/i.test(wxToday.s || "");
@@ -511,6 +511,35 @@ function renderHome() {
   $("#todaySpend").innerHTML = tdy.length && ME ? `<button class="lnk" data-go2="exp">💶 Bu gün xərcin: <b>${fm(mine)} €</b> (≈ ${fm(mine * R().azn)} ₼) ›</button>` : "";
   $$("[data-go2]").forEach(b => b.onclick = () => goView(b.dataset.go2));
 }
+/* ---------- push health: every open re-checks the real subscription and re-registers it on the server ---------- */
+S.push = "unknown";
+let pushChecked = 0;
+async function pushCheck(force) {
+  if (ADMIN) return; // the admin test link must never register as one of the girls
+  if (!force && Date.now() - pushChecked < 10 * 60000) return; pushChecked = Date.now();
+  const before = S.push;
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) S.push = /iPhone|iPad/.test(navigator.userAgent) && !isStandalone() ? "install" : "unsupported";
+    else if (Notification.permission === "denied") S.push = "denied";
+    else if (Notification.permission !== "granted") S.push = "off";
+    else {
+      const reg = await navigator.serviceWorker.ready; if (!VAPID) await bookingsLoad();
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub && VAPID) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) }); // permission already given: quietly renew
+      if (sub && ME) { await api("push.sub", { sub: sub.toJSON() }); S.push = "on"; } else S.push = "off";
+    }
+  } catch (e) { if (S.push === "unknown") S.push = "off"; }
+  LS.set("pushOn", S.push === "on");
+  if (S.push !== before) renderPushTip();
+}
+function renderPushTip() {
+  const box = $("#pushTip"); if (!box) return;
+  if (ADMIN || !ME || S.push === "on" || S.push === "unknown" || S.push === "unsupported") { box.innerHTML = ""; return; }
+  const msg = S.push === "install" ? "Bildiriş üçün tətbiqi <b>ana ekrana əlavə et</b> və oradan aç." : S.push === "denied" ? "Bildirişlər bağlıdır: iPhone <b>Ayarlar → Bildirişlər → Wien Bələdçi</b> → “İcazə ver”." : "Səhər brifinqi və xatırlatmalar üçün bildirişləri aç.";
+  box.innerHTML = `<div class="card mt" style="display:flex;gap:12px;align-items:center;background:#FFF7E6"><span style="font-size:26px">🔔</span><div class="grow sm"><b>Bildirişlər gəlmir</b>${msg}</div>${S.push === "off" ? `<button class="btn pri s" id="pushGo">Aç</button>` : ""}</div>`;
+  if ($("#pushGo")) $("#pushGo").onclick = async () => { await enablePush(); pushCheck(true); };
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pushCheck(); });
 const vDate = ts => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna" }).format(new Date(ts));
 function renderInstall() {
   const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
@@ -1458,7 +1487,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "26";
+const APPV = "27";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1636,7 +1665,7 @@ async function enablePush() {
     const perm = await Notification.requestPermission(); if (perm !== "granted") return toast("İcazə verilmədi");
     const reg = await navigator.serviceWorker.ready; if (!VAPID) await bookingsLoad();
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) });
-    await api("push.sub", { sub: sub.toJSON() }); LS.set("pushOn", true); await api("push.test"); toast("🔔 Bildirişlər açıldı");
+    await api("push.sub", { sub: sub.toJSON() }); LS.set("pushOn", true); S.push = "on"; renderPushTip(); await api("push.test"); toast("🔔 Bildirişlər açıldı");
     if ($("#bkPush")) $("#bkPush").outerHTML = `<div class="sync">🔔 Bildirişlər açıqdır</div>`;
   } catch (e) { alertBox("🔔 Alınmadı", "Bildirişi aça bilmədim. “📅 Təqvimə” düyməsindən istifadə et."); }
 }
@@ -1646,7 +1675,7 @@ async function bookScreen2(skip) {
   const days = PLAN.map(d => d), now = Date.now();
   const list = BOOK.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
   showResult(`<div class="ttl"><h2>📅 Rezerv və biletlər</h2></div>
-   ${LS.get("pushOn", false) ? `<div class="sync">🔔 Bildirişlər açıqdır</div>` : `<button class="btn pri wide" id="bkPush">🔔 Xatırlatma bildirişlərini aç</button>`}
+   ${S.push === "on" ? `<div class="sync">🔔 Bildirişlər açıqdır</div>` : `<button class="btn pri wide" id="bkPush">🔔 Xatırlatma bildirişlərini aç</button>`}
    ${days.map(d => { const items = list.filter(b => vDate(b.at) === d.d); return items.length ? `<div class="sm dim mt" style="font-weight:700">${esc(d.t)} · ${esc(d.w)}</div>${items.map(b => { const past = new Date(b.at).getTime() < now - 3600000;
      return `<div class="card mt" style="${past ? "opacity:.55" : ""}"><div style="display:flex;gap:10px;align-items:baseline"><b style="font:700 20px Fraunces,serif">${hhmm(b.at)}</b><div class="grow"><b>${esc(b.title)}</b>${b.place ? `<span class="s2">📍 ${esc(b.place)}</span>` : ""}${b.note ? `<span class="s2">📝 ${esc(b.note)}</span>` : ""}<span class="s2">${b.shared ? "👭 hamı üçün" : "🔒 yalnız mən"} · ⏰ ${b.lead_min >= 60 ? b.lead_min / 60 + " saat" : b.lead_min + " dəq"} əvvəl${b.sent ? " · ✓ xatırladıldı" : ""}</span></div></div>
       <div class="row mt" style="flex-wrap:wrap">${b.img ? `<button class="btn s pri" data-bi="${b.id}">🎫 Bilet</button>` : ""}${b.poi && byId[b.poi] ? `<button class="btn s" data-bg="${b.poi}">🧭 Get</button>` : ""}<button class="btn s" data-bc="${b.id}">📅 Təqvimə</button>${bkMine(b) ? `<button class="btn s" data-be="${b.id}">✎</button><button class="btn s" data-bd="${b.id}">✕</button>` : ""}</div></div>`; }).join("")}` : ""; }).join("")}
@@ -1714,7 +1743,7 @@ $$("[data-act2]").forEach(b => b.onclick = () => ({ book: () => bookScreen2(), p
 /* ---------- boot ---------- */
 function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
-  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome()); setTimeout(() => recentPrices(true), 600);
+  renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => { renderHome(); pushCheck(true); }); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
   setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
