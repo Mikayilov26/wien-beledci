@@ -183,7 +183,12 @@ function startGPS() {
   } catch (e) { S.gps = "off"; renderLoc(); }
 }
 // iPhone pauses GPS in the background: restart it every time the app comes back
-document.addEventListener("visibilitychange", () => { if (!document.hidden && S.gps !== "denied") startGPS(); });
+let gpsRestart = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || S.gps === "denied") return;
+  const stale = !S.me || S.me.src !== "gps" || Date.now() - S.me.ts > 60000;
+  if (stale && Date.now() - gpsRestart > 30000) { gpsRestart = Date.now(); startGPS(); }
+});
 $("#locChip").onclick = () => {
   if (S.gps === "denied") return alertBox("📍 GPS icazəsi bağlıdır", "iPhone: <b>Ayarlar → Məxfilik → Məkan xidmətləri → Safari veb-saytları → “İstifadə zamanı”</b>. Sonra səhifəni yenilə.");
   if (S.gps !== "on") startGPS();
@@ -197,8 +202,8 @@ async function api(op, data) {
   let r;
   try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, u: S.u, as: ADMIN ? ME : undefined, op }, data || {})), signal: ctl.signal }); }
   catch (e) { throw { code: e && e.name === "AbortError" ? "timeout" : "network" }; }
-  finally { clearTimeout(tm); }
-  let j = null; try { j = await r.json(); } catch (e) {}
+  let j = null; try { j = await r.json(); } catch (e) { if (e && e.name === "AbortError") { clearTimeout(tm); throw { code: "timeout" }; } }
+  clearTimeout(tm);
   if (!r.ok) throw { code: (j && j.error) || "http_" + r.status };
   return j;
 }
@@ -237,13 +242,22 @@ async function sync() {
     S.online = true; S.ai = j.ai !== false; LS.set("aiOn", S.ai); applyWho(j, false);
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
-    if (j.kv && j.kv.hotel) { S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); mapHotel(); }
+    if (j.kv && j.kv.hotel) { const hc = JSON.stringify(j.kv.hotel) !== JSON.stringify(S.hotel); S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); if (hc) mapHotel(); }
     S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
     await flushPending();
   } catch (e) { S.online = false; if (e.code === "forbidden" || e.code === "no_user") { syncing = false; return gate("Bu link işləmir. Kənanın göndərdiyi şəxsi linki yenidən aç."); } }
   finally { syncing = false; }
-  renderExpData(); renderHome(); mapAlerts();
+  const sig = JSON.stringify([S.expenses.length, S.expenses[0] && S.expenses[0].id, S.expenses.reduce((a, e) => a + (+e.eur || 0) + (e.paid ? 1 : 0), 0), S.live && S.live.updated, S.pending.length, S.online]);
+  if (sig === lastSyncSig) return; lastSyncSig = sig;
+  renderSafe();
 }
+let lastSyncSig = "", renderLater = false;
+const typing = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
+function renderSafe() {
+  if (typing()) { renderLater = true; return; }
+  renderLater = false; renderExpData(); renderHome(); mapAlerts();
+}
+document.addEventListener("focusout", () => setTimeout(() => { if (renderLater && !typing()) renderSafe(); }, 300));
 async function flushPending() {
   if (!S.pending.length) return;
   const left = [];
@@ -1008,12 +1022,31 @@ function fitTo(pts, maxZ) {
   const b = new (ML().LngLatBounds)(); pts.forEach(p => b.extend([p.lng, p.lat]));
   map.fitBounds(b, { padding: { top: 90, bottom: 120, left: 40, right: 70 }, maxZoom: maxZ || 16.5, duration: 600 });
 }
+const ML_JS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", ML_CSS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
+let mlLoading = null;
+function loadMapLib() {
+  if (window.maplibregl) return Promise.resolve();
+  if (mlLoading) return mlLoading;
+  mlLoading = new Promise((ok, bad) => {
+    if (!document.querySelector(`link[href="${ML_CSS}"]`)) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = ML_CSS; l.crossOrigin = ""; document.head.appendChild(l); }
+    const sc = document.createElement("script"); sc.src = ML_JS; sc.crossOrigin = ""; sc.onload = () => ok(); sc.onerror = () => { mlLoading = null; bad(); };
+    document.head.appendChild(sc);
+  });
+  return mlLoading;
+}
 function initMap() {
   if (map) return;
+  if (!window.maplibregl) {
+    if (!$("#map .card")) $("#map").innerHTML = `<div class="card" style="margin:70px 16px"><span class="spin"></span> Xəritə yüklənir…</div>`;
+    loadMapLib().then(() => { if (!map) { $("#map").innerHTML = ""; initMap(); if (map) setTimeout(() => { map.resize(); renderNear(); }, 50); } })
+      .catch(() => { $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi — internet zəifdir. <button class="btn s mt" onclick="initMap()">🔄 Yenidən</button> <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps</a></div>`; });
+    return;
+  }
   const fail = () => { map = null; $("#map").innerHTML = `<div class="card" style="margin:70px 16px">Xəritə yüklənmədi. İnterneti yoxla. <a class="btn s mt" href="https://www.google.com/maps/@48.2082,16.3719,15z" target="_blank" rel="noopener">Google Maps-da aç</a></div>`; };
   if (!ML()) return fail();
   const c = meHere() ? S.me : (S.hotel || { lat: 48.2085, lng: 16.3745 });
   try {
+    $("#map").innerHTML = "";
     map = new (ML().Map)({ container: "map", style: MAP_STYLE, center: [c.lng, c.lat], zoom: meHere() ? 15.5 : 14.5, minZoom: 10, maxZoom: 19, dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: { compact: true } });
   } catch (e) { return fail(); }
   window.__map = map;
@@ -1034,6 +1067,7 @@ function initMap() {
   map.on("moveend", drawPOI);
   map.on("click", () => { if (selPoi) { selPoi = null; drawPOI(); } });
   map.on("error", () => {}); // offline tiles: keep the pins working
+  map.on("webglcontextlost", () => { try { setTimeout(() => map && map.triggerRepaint(), 500); } catch (e) {} });
   drawPOI(); renderNear(); mapHotel(); mapFriends(); mapMe(); mapAlerts();
   if (!meHere() && S.filter == null) setTimeout(() => fitTo(planStops().concat(S.hotel ? [S.hotel] : [])), 50);
 }
@@ -1279,7 +1313,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "24";
+const APPV = "25";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 async function checkVersion() {
   try {
@@ -1537,7 +1571,7 @@ function boot2() {
   const ti = PLAN.findIndex(d => d.d === vNow().date); planDay = ti >= 0 ? ti : 0;
   renderHome(); renderLoc(); startGPS(); sync(); checkVersion(); bookingsLoad().then(() => renderHome()); setTimeout(() => recentPrices(true), 600);
   if (ADMIN && !ME) askWho();
-  setInterval(() => { if (!document.hidden && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
+  setInterval(() => { if (!document.hidden && !typing() && $("#v-home").classList.contains("on") && $("#result").hidden) renderHome(); }, 60000);
 }
 (function boot() {
   S.code = readCode();
