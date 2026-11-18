@@ -198,7 +198,29 @@ $("#locChip").onclick = () => {
 function alertBox(title, html) { $("#bigBox").innerHTML = `<h3 style="font-size:20px">${title}</h3><p class="mute" style="text-align:left">${html}</p><button class="btn pri wide" id="bbX">Oldu</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on"); }
 
 /* ---------- API ---------- */
+const RETRY_OPS = /^(ai|price\.extract|price\.search|tts|gt)$/;
+const transient = e => e && /^(network|timeout|upstream|rate_limited|http_50[0-9]|http_429|unknown)$/.test(e.code || "unknown");
 async function api(op, data) {
+  try { return await api1(op, data); }
+  catch (e) {
+    if (!RETRY_OPS.test(op) || !transient(e)) throw e;
+    if (op === "price.search") { const got = await priceRecover(data); if (got) return got; } // the answer may have been saved even if it got lost on the way
+    toast("⏳ Bir az da gözləyin…");
+    await new Promise(r => setTimeout(r, e.code === "rate_limited" || e.code === "http_429" ? 3000 : 1500));
+    try { return await api1(op, data); }
+    catch (e2) { if (op === "price.search") { const got = await priceRecover(data); if (got) return got; } throw e2; }
+  }
+}
+// a price check whose answer was lost on the way: the server has still saved it — fetch it from there
+async function priceRecover(data) {
+  try {
+    const p = (data && data.product) || {}, since = Date.now() - 5 * 60000, n = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const j = await api1("prices", {});
+    const hit = (j.prices || []).find(x => x.ts >= since && n(x.brand) === n(p.brand) && n(x.code) === n(p.code) && x.result);
+    return hit ? { result: hit.result, cached: true, recovered: true } : null;
+  } catch (e) { return null; }
+}
+async function api1(op, data) {
   const ctl = new AbortController(), slow = /^price\./.test(op), tm = setTimeout(() => ctl.abort(), slow ? 90000 : 20000);
   let r;
   try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.assign({ k: S.code, u: S.u, as: ADMIN ? ME : undefined, op }, data || {})), signal: ctl.signal }); }
@@ -210,10 +232,16 @@ async function api(op, data) {
 }
 // streaming AI text
 async function ai(o) {
+  try { return await ai1(o); }
+  catch (e) { if (!transient(e) || o.__retried) throw e; o.__retried = true; toast("⏳ Bir az da gözləyin…"); await new Promise(r => setTimeout(r, e.code === "rate_limited" ? 3000 : 1500)); return await ai1(o); }
+}
+async function ai1(o) {
   const body = { k: S.code, u: S.u, as: ADMIN ? ME : undefined, op: "ai", mode: o.mode || "", who: ME || "", tier: o.tier || "fast", system: o.system, messages: o.messages || [{ role: "user", content: o.prompt }], image: o.image, max_tokens: o.max_tokens, search: !!o.search, max_searches: o.max_searches };
   let r;
-  try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
-  catch (e) { throw { code: "network" }; }
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
+  try { r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal }); }
+  catch (e) { clearTimeout(tm); throw { code: e && e.name === "AbortError" ? "timeout" : "network" }; }
+  clearTimeout(tm);
   if (!r.ok) { let j = null; try { j = await r.json(); } catch (e) {} throw { code: (j && j.error) || "http_" + r.status }; }
   if (o.search) return await r.json();
   if (!r.body || !r.body.getReader) { const t = await r.text(); o.onText && o.onText(t); return t; }
@@ -812,9 +840,14 @@ function offerUrl(o, p) {
   const q = [p && p.brand, p && (p.code || p.model)].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(q + (site ? " site:" + site : " " + (o.store || "")))}`;
 }
+// "different variant" only when the shop shows a related but different article code; otherwise we simply could not confirm it
+function simLabel(o) {
+  const n = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, ""), mine = n(prCur && prCur.p && prCur.p.code), theirs = n(o.code_on_page);
+  return mine.length >= 6 && theirs && theirs.includes(mine.slice(0, 6)) ? "oxşar · fərqli variant" : "oxşar model · artikul yoxlanmadı";
+}
 function offerList(arr, flag, r) {
   if (!arr || !arr.length) return "";
-  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => (liveOffer(a) ? 0 : 1) - (liveOffer(b) ? 0 : 1) || a.price - b.price).map(o => `<li${liveOffer(o) ? "" : ` style="opacity:.55"`}><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">oxşar · fərqli variant</span>` : `<span class="tag">eyni</span>`} ${offerBadge(o)}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a> · <a class="sm dim" href="${esc(offerUrl({ store: o.store, url: (() => { try { return "https://" + new URL(o.url).hostname + "/"; } catch (e) { return ""; } })() }, prCur && prCur.p))}" target="_blank" rel="noopener">Google-da</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
+  return `<div class="sm dim mt">${flag}</div><ul class="offers">${arr.slice().sort((a, b) => (liveOffer(a) ? 0 : 1) - (liveOffer(b) ? 0 : 1) || a.price - b.price).map(o => `<li${liveOffer(o) ? "" : ` style="opacity:.55"`}><div class="grow"><b>${esc(o.store || "Mağaza")}</b>${o.match === "similar" ? `<span class="tag sim">${simLabel(o)}</span>` : `<span class="tag">eyni</span>`} ${offerBadge(o)}<br><a class="sm" href="${esc(offerUrl(o, prCur && prCur.p))}" target="_blank" rel="noopener">bax ›</a> · <a class="sm dim" href="${esc(offerUrl({ store: o.store, url: (() => { try { return "https://" + new URL(o.url).hostname + "/"; } catch (e) { return ""; } })() }, prCur && prCur.p))}" target="_blank" rel="noopener">Google-da</a></div><div class="pr">${fm(o.price, o.currency === "AZN" ? 2 : 0)} ${o.currency === "TRY" ? "₺" : o.currency === "EUR" ? "€" : "₼"}${o.currency !== "AZN" ? `<span>≈ ${fm(toAzn(o, r))} ₼</span>` : ""}</div></li>`).join("")}</ul>`;
 }
 function renderPrice(p, res, cached) {
   res = sane(res);
@@ -1542,7 +1575,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "32";
+const APPV = "33";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });

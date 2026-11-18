@@ -24,6 +24,15 @@ async function cfg(key: string, def = ""): Promise<string> {
   cfgCache[key] = { v, t: Date.now() };
   return v;
 }
+// every failure is written down (last 60) so problems can be seen and reported in the morning check
+async function logErr(op: string, who: string, err: unknown, extra?: unknown) {
+  try {
+    const { data } = await sb.from("kv").select("value").eq("key", "errlog").maybeSingle();
+    const log = Array.isArray(data?.value) ? data!.value : [];
+    const e = { t: new Date().toISOString(), op, who, err: String((err as any)?.code ?? (err as any)?.message ?? err).slice(0, 160), detail: String((err as any)?.detail ?? extra ?? "").slice(0, 200) };
+    await sb.from("kv").upsert({ key: "errlog", value: [e, ...log].slice(0, 60), updated_at: new Date().toISOString() });
+  } catch { /* never block */ }
+}
 async function models() { try { return JSON.parse(await cfg("models", "{}")); } catch { return {}; } }
 
 // Pick provider for a task: "price" prefers Gemini (free Google grounding), everything else prefers Claude.
@@ -91,7 +100,7 @@ Deno.serve(async (req) => {
         if (ex.error) throw ex.error;
         if (kv.error) throw kv.error;
         const kvm: Record<string, unknown> = {};
-        for (const r of kv.data ?? []) if (r.key !== "pushlog" && !r.key.startsWith("sbx:") && !r.key.startsWith("nudge")) kvm[r.key] = r.value;
+        for (const r of kv.data ?? []) if (r.key !== "pushlog" && r.key !== "errlog" && !r.key.startsWith("sbx:") && !r.key.startsWith("nudge")) kvm[r.key] = r.value;
         if (admin) for (const r of kv.data ?? []) if (r.key.startsWith("sbx:")) kvm[r.key.slice(4)] = r.value; // admin sees own test state on top
         return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
       }
@@ -306,6 +315,7 @@ Deno.serve(async (req) => {
       default: return json({ error: "unknown_op" }, 400);
     }
   } catch (e) {
+    await logErr(op, who, e);
     return json({ error: String((e as any)?.message ?? e) }, 500);
   }
 });
@@ -598,13 +608,16 @@ async function geminiStream(model: string, msgs: any[], image: string | null, sy
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   let r: Response | null = null;
   for (const m of gemChain(model)) {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse`, {
-      method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
-    });
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse`, {
+        method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
+      });
+    } catch { r = null; continue; }
     if (r.ok || ![429, 500, 503].includes(r.status)) break;
   }
-  if (!r || !r.ok || !r.body) return upstreamError(r!);
-  return textStream((push) => sseLines(r.body!, (ev) => {
+  if (!r) { await logErr("ai", "", "timeout"); return json({ error: "upstream", detail: "timeout" }, 502); }
+  if (!r.ok || !r.body) return upstreamError(r);
+  return textStream((push) => sseLines(r!.body!, (ev) => {
     for (const p of ev.candidates?.[0]?.content?.parts ?? []) if (p.text && !p.thought) push(p.text);
   }));
 }
@@ -628,18 +641,21 @@ async function claudeOnce(model: string, content: any, maxTok: number, tools?: a
   }
   return { text, sources };
 }
-async function geminiOnce(model: string, parts: any[], maxTok: number, search: boolean, thinking = "low") {
+async function geminiOnce(model: string, parts: any[], maxTok: number, search: boolean, thinking = "low", timeoutMs = 25000) {
   const body: any = { contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: maxTok + 1200, thinkingConfig: { thinkingLevel: thinking } } };
   if (search) body.tools = [{ google_search: {} }];
   let r: Response | null = null, used = model;
   for (const m of gemChain(model)) {
     used = m;
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-      method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body),
-    });
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: "POST", headers: { "x-goog-api-key": keys().gemini, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch { r = null; continue; } // timed out: try the other model once
     if (r.ok || ![429, 500, 503].includes(r.status)) break;
   }
-  if (!r || !r.ok) throw await upstreamErr(r!);
+  if (!r) throw { code: "upstream", status: 502, detail: "timeout" };
+  if (!r.ok) throw await upstreamErr(r);
   const j = await r.json();
   const cand = j.candidates?.[0] ?? {};
   const text = (cand.content?.parts ?? []).filter((p: any) => p.text && !p.thought).map((p: any) => p.text).join("");
@@ -716,7 +732,8 @@ async function priceSearch(b: any): Promise<Response> {
       qs.push({ cc: "tr", q: `${byName} fiyat Türkiye. Bu modelin Türkiye'deki güncel satış fiyatları: mağaza, TL fiyat, ürün linki, stok durumu, ürün kodu.` });
       qs.push({ cc: "az", q: `${byName} price Baku Azerbaijan AZN (цена Баку). Stores in Azerbaijan selling this model: store, price in AZN, product link, stock, article code.` });
     }
-    const runs = await Promise.all(qs.map((x) => geminiOnce(sm, [{ text: x.q }], 900, true, "low").then((r) => ({ ...x, r })).catch(() => null)));
+    const t0 = Date.now();
+    const runs = await Promise.all(qs.map((x) => geminiOnce(sm, [{ text: x.q }], 900, true, "low", 22000).then((r) => ({ ...x, r })).catch((e) => { logErr("price.search", String(b.who ?? ""), e, x.cc); return null; })));
     const ok = runs.filter((x): x is NonNullable<typeof x> => !!x && (x.r.sources.length > 0 || (x.r.queries ?? []).length > 0));
     const grounded = ok.length > 0;
     // 2) every grounding link is a Google redirect — resolve it to the real page address
@@ -742,8 +759,8 @@ ${srcs.map((s) => `[${s.n}] ${s.dom} — ${s.url}`).join("\n")}
 Qaydalar: hər təklif üçün "src" — yuxarıdakı səhifə nömrəsi (məcburi; uyğun səhifə yoxdursa təklifi yazma). "code_on_page" — səhifədə/mətndə görünən artikul (yoxdursa boş). "in_stock": true/false/null (mətndə "tükendi", "stokta yok", "sold out", "out of stock" varsa false). "match": artikul tam eynidirsə "exact", eyni model başqa rəng/ölçü/variant və ya kod fərqlidirsə "similar". Bakı üçün yalnız AZN, Türkiyə üçün yalnız TL qiymətlər. Qiymət aralığı varsa konkret mağaza qiymətini götür.
 YALNIZ JSON:
 {"baku":[{"store":"","price":0,"src":1,"code_on_page":"","in_stock":true,"match":"exact"}],"turkey":[{"store":"","price":0,"src":1,"code_on_page":"","in_stock":true,"match":"exact"}]}`;
-      const c = await geminiOnce(fx, [{ text: conv }], 900, false, "low");
-      o = parseJSON(c.text) ?? {};
+      try { const c = await geminiOnce(fx, [{ text: conv }], 900, false, "low", 15000); o = parseJSON(c.text) ?? {}; }
+      catch (e) { await logErr("price.structure", String(b.who ?? ""), e); o = {}; }
     }
     // 4) keep only offers tied to a real page of the right country, then open each page and check price + stock
     const ncode = norm(code);
@@ -760,7 +777,7 @@ YALNIZ JSON:
       }).filter(Boolean) as any[];
       // de-duplicate the same page
       const uniq: any[] = []; for (const x of list) if (!uniq.find((y) => y.url === x.url && y.price === x.price)) uniq.push(x);
-      await Promise.all(uniq.slice(0, 6).map((x) => verifyPage(x, ncode)));
+      if (Date.now() - t0 < 40000) await Promise.all(uniq.slice(0, 4).map((x) => verifyPage(x, ncode))); // keep the whole check well under a minute
       return uniq.slice(0, 6);
     };
     const [baku, turkey] = await Promise.all([build(o.baku, "AZN", "az"), build(o.turkey, "TRY", "tr")]);
@@ -773,7 +790,7 @@ YALNIZ JSON:
     if (grounded) await sb.from("price_cache").upsert({ key, result, provider: prov, created_at: new Date().toISOString() });
     await logPrice(b, p, result);
     return json({ result, cached: false, provider: prov });
-  } catch (e: any) { return json({ error: e.code ?? "upstream", detail: e.detail ? String(e.detail).slice(0, 300) : undefined }, e.status ?? 502); }
+  } catch (e: any) { await logErr("price.search", String(b.who ?? ""), e); return json({ error: e.code ?? "upstream", detail: e.detail ? String(e.detail).slice(0, 300) : undefined }, e.status ?? 502); }
 }
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 // Google grounding links are redirects (vertexaisearch.cloud.google.com/grounding-api-redirect/...): read where they point
@@ -798,8 +815,8 @@ async function verifyPage(x: any, ncode: string) {
   try {
     const r = await fetch(x.url, { signal: AbortSignal.timeout(5500), redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "accept-language": "tr-TR,tr;q=0.9,az;q=0.8,en;q=0.7" } });
     if (!r.ok) { x.check = r.status === 404 || r.status === 410 ? "gone" : "blocked"; await r.body?.cancel(); if (x.check === "gone") x.stock = "out"; return; }
-    const html = (await r.text()).slice(0, 900_000);
-    const txt = html.replace(/<script[\s\S]*?<\/script>/gi, (m) => /ld\+json|__NEXT_DATA__|product/i.test(m) ? m : " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ");
+    const html = (await r.text()).slice(0, 350_000);
+    const txt = html.replace(/<[^>]{0,400}>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ");
     const low = txt.toLowerCase();
     // stock: schema.org says so, or the page shows a sold-out word and no add-to-basket button
     const soldWord = /(tükendi|tükenmiştir|stokta yok|stokta bulunmamaktadır|out of stock|sold out|outofstock|нет в наличии|stokda yoxdur|mövcud deyil|satışda yoxdur)/i.test(low);
@@ -843,4 +860,4 @@ async function upstreamErr(r: Response) {
   const code = r.status === 429 || r.status === 529 ? "rate_limited" : r.status === 401 || r.status === 403 ? "bad_key" : /credit|billing|quota/i.test(t) ? "no_credit" : "upstream";
   return { code, status: r.status === 401 || r.status === 403 ? 503 : 502, detail: t.slice(0, 300) };
 }
-async function upstreamError(r: Response) { const e = await upstreamErr(r); return json({ error: e.code, detail: e.detail }, e.status); }
+async function upstreamError(r: Response) { const e = await upstreamErr(r); await logErr("upstream", "", e); return json({ error: e.code, detail: e.detail }, e.status); }
