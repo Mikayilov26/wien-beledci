@@ -129,18 +129,30 @@ function shareSummary(date) {
 
 /* ---------- group location (opt-in) ---------- */
 let lastPush = 0;
+const SHARE_END = Date.UTC(2026, 10, 20, 16, 0); // 20 Nov 20:00 Baku: sharing switches itself off after the trip
 async function pushLoc(force) {
+  if (ADMIN) return; // the test phone never shares (and never covers one of the girls' dots)
+  if (S.share && Date.now() > SHARE_END) { S.share = false; LS.set("shareLoc", false); if (ME) api("kv.set", { key: "loc:" + ME, value: null }).catch(() => {}); return; }
   if (!S.share || !ME || !S.me || S.me.src !== "gps" || !S.code) return;
   if (!force && Date.now() - lastPush < 45000) return; lastPush = Date.now();
   try { await api("kv.set", { key: "loc:" + ME, value: { lat: +S.me.lat.toFixed(5), lng: +S.me.lng.toFixed(5), acc: Math.round(S.me.acc || 0) } }); } catch (e) {}
 }
-function friendsList() { return Object.entries(S.friends).filter(([n, v]) => n !== ME && v && Date.now() - v.ts < 3 * 3600000).map(([n, v]) => ({ n, ...v })); }
+function friendsList() { return Object.entries(S.friends).filter(([n, v]) => (ADMIN || n !== ME) && v && Date.now() - v.ts < 3 * 3600000).map(([n, v]) => ({ n, ...v })); }
 const ago = ts => { const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? "indicə" : m < 60 ? m + " dəq əvvəl" : Math.floor(m / 60) + " saat əvvəl"; };
+function renderFamily() {
+  const box = $("#famCard"); if (!box) return;
+  if (!ADMIN) { setHTML(box, ""); return; }
+  const fr = Object.entries(S.friends).filter(([n, v]) => PEOPLE.includes(n) && v && v.ts).map(([n, v]) => ({ n, ...v }));
+  const near = f => { const p = POI.map(x => ({ x, d: dist(f, x) })).sort((a, b) => a.d - b.d)[0]; return p && p.d < 600 ? p.x.name + " yaxınlığı" : ""; };
+  setHTML(box, `<div class="card mt"><b>📍 Ailə harada?</b>${PEOPLE.map(n => { const f = fr.find(x => x.n === n);
+    return `<div class="person"><div><b>${n}</b><span class="s2">${f ? (near(f) || "Vyana") + " · " + ago(f.ts) : "yerini paylaşmır"}</span></div>${f ? `<button class="btn s" data-famgo="${n}">Xəritədə</button>` : ""}</div>`; }).join("")}</div>`);
+  $$("[data-famgo]").forEach(b => b.onclick = () => { const f = S.friends[b.dataset.famgo]; goView("map"); setTimeout(() => mapGo(f.lat, f.lng, 16), 700); });
+}
 function groupSheet() {
   const fr = friendsList();
   $("#sheetBody").innerHTML = `<h3 style="font-size:21px;margin-right:36px">👭 Qrup</h3>
-   <p class="mute sm">Yerini paylaşsan, qızlar səni xəritədə görəcək (hər 45 saniyədən bir yenilənir). İstədiyin vaxt söndür.</p>
-   ${ME ? `<button class="btn wide ${S.share ? "" : "pri"}" id="shTg">${S.share ? "⏸ Paylaşmanı dayandır" : "📍 Yerimi qrupla paylaş"}</button>` : `<button class="btn pri wide" id="shWho">Əvvəl adını seç</button>`}
+   <p class="mute sm">${ADMIN ? "Qızlar yerini paylaşanda burada və xəritədə görünür." : "Yerini paylaşsan, qızlar və <b>Kənan</b> səni xəritədə görəcək (hər 45 saniyədən bir yenilənir). İstədiyin vaxt söndür. Səfər bitəndə (20 noyabr axşamı) özü sönür."}</p>
+   ${ADMIN ? "" : ME ? `<button class="btn wide ${S.share ? "" : "pri"}" id="shTg">${S.share ? "⏸ Paylaşmanı dayandır" : "📍 Yerimi qrupla paylaş"}</button>` : `<button class="btn pri wide" id="shWho">Əvvəl adını seç</button>`}
    <ul class="list mt">${fr.length ? fr.map(f => `<li data-fr="${esc(f.n)}" style="cursor:pointer"><span class="friend"><i>${esc(f.n[0])}</i>${esc(f.n)}</span><div class="grow"></div><span class="sm dim">${S.me ? fmtKm(walkM(dist(S.me, f))) + " · " : ""}${ago(f.ts)}</span></li>`).join("") : `<li class="mute sm">Hələ heç kim yerini paylaşmır.</li>`}</ul>`;
   $("#sheet").classList.add("on");
   if ($("#shWho")) $("#shWho").onclick = askWho;
@@ -274,7 +286,7 @@ async function sync() {
     if (j.kv && j.kv.prog) progMerge(j.kv.prog);
     if (Array.isArray(j.inbox)) { S.inbox = j.inbox; LS.set("inbox", j.inbox.slice(0, 60)); renderBell(); }
     if (j.kv && j.kv.hotel) { const hc = JSON.stringify(j.kv.hotel) !== JSON.stringify(S.hotel); S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); if (hc) mapHotel(); }
-    S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
+    S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends(); renderFamily();
     await flushPending();
   } catch (e) { S.online = false; if (e.code === "forbidden" || e.code === "no_user") { syncing = false; return gate("Bu link işləmir. Kənanın göndərdiyi şəxsi linki yenidən aç."); } }
   finally { syncing = false; }
@@ -543,7 +555,7 @@ function renderHome() {
   const wx = S.live.weather || [];
   setHTML("#wxCard", `<div class="sm dim" style="margin-bottom:6px">Hava · məzənnə</div>` + (wx.length ? `<div class="wx">${wx.map(w => `<div>${esc(w.day)}<b>${esc(w.t)}</b>${esc(w.s || "")}</div>`).join("")}</div>` : "") +
     (S.live.weatherNote ? `<div class="note">🌦 ${esc(S.live.weatherNote)}</div>` : "") + `<div class="note">💱 1 € = ${fm(R().azn)} ₼ · ${fm(R().try)} ₺${S.live.updated ? ` · yeniləndi ${esc(S.live.updated)}` : ""}</div>`);
-  renderConv(); renderInstall(); renderPushTip();
+  renderConv(); renderInstall(); renderPushTip(); renderFamily();
   const tdy = expAll().filter(e => vDate(e.ts) === now.date), mine = ME ? tdy.reduce((a, e) => a + myShare(e), 0) : 0;
   const tripDay = now.date >= "2026-11-17" && now.date <= "2026-11-20";
   const wxToday = (S.live.weather || [])[0], rainy = wxToday && /yağış|qar|leysan/i.test(wxToday.s || "");
@@ -578,6 +590,7 @@ function handleGo(go) {
   else if (go === "tf") { goView("exp"); setTimeout(() => tfAsk(), 300); }
   else if (go === "tfback") { goView("exp"); setTimeout(() => tfBackDialog(false), 300); }
   else if (go === "inbox") openInbox();
+  else if (go === "share") { goView("map"); setTimeout(groupSheet, 600); }
 }
 function goFromUrl() { const m = location.search.match(/[?&]go=([a-z]+)/); if (!m) return; history.replaceState(null, "", location.pathname + location.search.replace(/([?&])go=[a-z]+&?/, "$1").replace(/[?&]$/, "")); setTimeout(() => handleGo(m[1]), 400); }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.go) handleGo(e.data.go); });
@@ -1630,7 +1643,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "34";
+const APPV = "35";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1679,7 +1692,7 @@ function sos() {
    <a class="btn wide mt" href="tel:112">📞 112 — təcili yardım</a>
    ${me ? "" : `<div class="note">GPS yeri hələ tapılmayıb — açıq yerə çıx və ya icazəni yoxla.</div>`}`);
   $("#sosShare").onclick = async () => {
-    if (ME) { S.share = true; LS.set("shareLoc", true); try { $("#grpBtn").classList.add("on"); } catch (e) {} await pushLoc(true); }
+    if (ME && !ADMIN) { S.share = true; LS.set("shareLoc", true); try { $("#grpBtn").classList.add("on"); } catch (e) {} await pushLoc(true); }
     const txt = `🆘 ${ME || "Mən"}: buradayam${me ? " → " + link : ""}${S.me ? ` (${S.me.label} yaxınlığı)` : ""}`;
     if (navigator.share) navigator.share({ text: txt }).catch(() => {}); else { try { await navigator.clipboard.writeText(txt); toast("Kopyalandı — WhatsApp-a yapışdır"); } catch (e) {} }
   };
