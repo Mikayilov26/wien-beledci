@@ -35,6 +35,10 @@ let ME = LS.get("who", null), ADMIN = LS.get("admin", false);
 Object.defineProperty(byId, "hotel", { get: () => { const h = S.hotel || HOTEL0; return { id: "hotel", name: "🏨 " + (h.name || "Otel"), lat: h.lat, lng: h.lng, cat: "tarix", d: h.addr || "" }; } });
 const TF_MIN = 75.01, TF_RATE = 0.12; // Austria: min €75.01 per receipt; ~12% net back after operator fees
 const tfBack = eur => eur >= TF_MIN ? eur * TF_RATE : 0;
+// Tax-free is only for goods taken out of the EU — never for restaurants, cafés, transport or tickets
+const TF_NO_CAT = ["🍽 Yemək", "☕ Kafe", "🎟 Bilet", "🚇 Nəqliyyat"];
+const TF_NO_WORD = /restoran|restaurant|kafe|caf[eé]|kaffee|schnitzel|nahar|şam yeməy|sam yemey|səhər yeməy|yemək|yemek|pizza|burger|mcdonald|kfc|starbucks|bar\b|beisl|heuriger|wirtshaus|taksi|taxi|uber|bolt|bilet|ticket|metro|tram|bus\b|qatar|zug|öbb|obb|muzey|museum|konsert|opera/i;
+const tfEligible = e => !!e && !TF_NO_CAT.includes(e.cat) && !TF_NO_WORD.test(e.d || "");
 const R = () => ({ azn: +S.live.eurAzn || 1.96, try: +S.live.eurTry || 55 });
 
 /* ---------- Vienna time ---------- */
@@ -1130,7 +1134,7 @@ function renderMine(all) {
 /* ---------- tax-free: ask after a big purchase, and later ask how much really came back ---------- */
 function tfAsk(list) {
   const no = LS.get("tfNo", []);
-  list = (list || S.expenses.filter(e => +e.eur >= TF_MIN && !e.tf && (e.payer === ME || e.by === ME))).filter(e => !no.includes(e.id));
+  list = (list || S.expenses.filter(e => +e.eur >= TF_MIN && !e.tf && tfEligible(e) && (e.payer === ME || e.by === ME))).filter(e => !no.includes(e.id));
   if (!list.length) { goView("exp"); return; }
   $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">🧾 Tax-free formu aldınız?</h3><div class="sm mute" style="text-align:left">75 €-dan çox alışda ≈12% geri qayıdır. Formu aldınızsa “Bəli” basın — 20 noyabrda hava limanında xatırladacam.</div>
    ${list.map(e => `<div class="card mt" style="text-align:left"><b>${esc(e.d)}</b><div class="sm dim">${fm(+e.eur)} € · ≈ ${fm(tfBack(+e.eur))} € geri</div><div class="row mt"><button class="btn grow" data-tfno="${esc(e.id)}">Xeyr</button><button class="btn pri grow" data-tfyes="${esc(e.id)}">✓ Bəli, aldım</button></div></div>`).join("")}
@@ -1184,13 +1188,13 @@ function editExp(id) {
    <input class="inp mt" id="edD" value="${esc(e.d)}">
    ${e.priv ? "" : `<div class="sm dim mt" style="text-align:left">Kim ödədi?</div><div class="chips" id="edPay" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip" data-p="${p}">${p}</button>`).join("")}</div>
    <div class="sm dim mt" style="text-align:left">Kimlər üçün?</div><div class="chips" id="edParts" style="margin-top:6px">${PEOPLE.map(p => `<button type="button" class="chip" data-p="${p}">${p}</button>`).join("")}</div>`}
-   <button type="button" class="chip mt" id="edTf">🧾 Tax-free</button>
+   ${tfEligible(e) || e.tf ? `<button type="button" class="chip mt" id="edTf">🧾 Tax-free</button>` : ""}
    <div class="row mt"><button class="btn grow" id="edX">Ləğv et</button><button class="btn pri grow" id="edOk">💾 Yadda saxla</button></div>`;
-  const draw = () => { $$("#edCur button").forEach(x => x.classList.toggle("on", x.dataset.c === st.cur)); $$("#edPay .chip").forEach(x => x.classList.toggle("on", x.dataset.p === st.payer)); $$("#edParts .chip").forEach(x => x.classList.toggle("on", st.parts.includes(x.dataset.p))); $("#edTf").classList.toggle("on", st.tf); };
+  const draw = () => { $$("#edCur button").forEach(x => x.classList.toggle("on", x.dataset.c === st.cur)); $$("#edPay .chip").forEach(x => x.classList.toggle("on", x.dataset.p === st.payer)); $$("#edParts .chip").forEach(x => x.classList.toggle("on", st.parts.includes(x.dataset.p))); if ($("#edTf")) $("#edTf").classList.toggle("on", st.tf); };
   $$("#edCur button").forEach(b => b.onclick = () => { st.cur = b.dataset.c; draw(); });
   $$("#edPay .chip").forEach(b => b.onclick = () => { st.payer = b.dataset.p; draw(); });
   $$("#edParts .chip").forEach(b => b.onclick = () => { const p = b.dataset.p; st.parts = st.parts.includes(p) ? st.parts.filter(x => x !== p) : st.parts.concat(p); if (!st.parts.length) st.parts = [p]; draw(); });
-  $("#edTf").onclick = () => { st.tf = !st.tf; draw(); };
+  if ($("#edTf")) $("#edTf").onclick = () => { st.tf = !st.tf; draw(); };
   $("#edX").onclick = () => $("#bigModal").classList.remove("on");
   $("#edOk").onclick = async () => {
     const v = toNum($("#edA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
@@ -1270,7 +1274,8 @@ function renderExp(force) {
     $("#expA").oninput = upd;
     $$("#expCur button").forEach(b => b.onclick = () => { setExpCur(b.dataset.c); upd(); });
     const drawCats = () => { const cs = expUI.mode === "mine" ? PCATS : CATS; $("#expCats").innerHTML = cs.map(c => `<button type="button" class="chip ${expUI.cat === c ? "on" : ""}" data-cat="${c}">${c}</button>`).join("");
-      $$("#expCats .chip").forEach(b => b.onclick = () => { const on = !b.classList.contains("on"); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = on ? b.dataset.cat : ""; if (on) b.classList.add("on"); }); };
+      $$("#expCats .chip").forEach(b => b.onclick = () => { const on = !b.classList.contains("on"); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = on ? b.dataset.cat : ""; if (on) b.classList.add("on"); tfChipVis(); }); };
+    const tfChipVis = () => { const ok = !TF_NO_CAT.includes(expUI.cat); $("#expTf").style.display = ok ? "" : "none"; if (!ok && expUI.tf) { expUI.tf = false; $("#expTf").classList.remove("on"); } };
     const setMode = m => { if (m === "mine" && !ME) { askWho(); return; } expUI.mode = m; LS.set("expMode", m); expUI.cat = ""; drawCats();
       $$("#expMode button").forEach(x => x.classList.toggle("on", x.dataset.m === m));
       $("#sharedOnly").hidden = m === "mine"; $("#privNote").hidden = m !== "mine"; $("#expView").hidden = m === "mine";
@@ -1283,8 +1288,8 @@ function renderExp(force) {
       e.preventDefault(); const v = toNum($("#expA").value); if (!(v > 0)) { toast("Məbləği yaz"); return; }
       const r = R(), mine = expUI.mode === "mine";
       const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: mine ? ME : expUI.payer, parts: mine ? [ME] : expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf, priv: mine, cat: expUI.cat || null };
-      $("#expA").value = ""; $("#expD").value = ""; $("#rcOut").innerHTML = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
-      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); if (+j.row.eur >= TF_MIN && !j.row.tf) setTimeout(() => tfAsk([j.row]), 700); }
+      $("#expA").value = ""; $("#expD").value = ""; $("#rcOut").innerHTML = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on"); $("#expTf").style.display = "";
+      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); if (+j.row.eur >= TF_MIN && !j.row.tf && tfEligible(j.row)) setTimeout(() => tfAsk([j.row]), 700); }
       catch (err) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
       renderExpData();
     };
@@ -1643,7 +1648,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "35";
+const APPV = "36";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
