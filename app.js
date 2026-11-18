@@ -272,6 +272,7 @@ async function sync() {
     S.expenses = j.expenses || []; LS.set("expCache", S.expenses);
     if (j.kv && j.kv.live) { S.live = j.kv.live; LS.set("live", S.live); }
     if (j.kv && j.kv.prog) progMerge(j.kv.prog);
+    if (Array.isArray(j.inbox)) { S.inbox = j.inbox; LS.set("inbox", j.inbox.slice(0, 60)); renderBell(); }
     if (j.kv && j.kv.hotel) { const hc = JSON.stringify(j.kv.hotel) !== JSON.stringify(S.hotel); S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); if (hc) mapHotel(); }
     S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends();
     await flushPending();
@@ -574,6 +575,9 @@ function handleGo(go) {
   else if (go === "mem") { goView("home"); const t = $('[data-act="book"]'); if (t) t.click(); }
   else if (go === "cam") pulse("#camIn"); else if (go === "price") pulse("#priceIn"); else if (go === "menu") pulse("#menuIn");
   else if (go === "reco") pulse("#recoBtn");
+  else if (go === "tf") { goView("exp"); setTimeout(() => tfAsk(), 300); }
+  else if (go === "tfback") { goView("exp"); setTimeout(() => tfBackDialog(false), 300); }
+  else if (go === "inbox") openInbox();
 }
 function goFromUrl() { const m = location.search.match(/[?&]go=([a-z]+)/); if (!m) return; history.replaceState(null, "", location.pathname + location.search.replace(/([?&])go=[a-z]+&?/, "$1").replace(/[?&]$/, "")); setTimeout(() => handleGo(m[1]), 400); }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.go) handleGo(e.data.go); });
@@ -1074,10 +1078,11 @@ const PCATS = ["👗 Geyim", "👟 Ayaqqabı", "💄 Kosmetika", "🎁 Hədiyyə
 const CATS = ["🍽 Yemək", "☕ Kafe", "🎟 Bilet", "🚇 Nəqliyyat", "🛍 Alış-veriş", "🎄 Bazar"];
 let expBuilt = false;
 const shared = l => l.filter(e => !e.priv);
-const myShare = e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return e.priv ? (e.by === ME ? +e.eur || 0 : 0) : ps.includes(ME) ? (+e.eur || 0) / ps.length : 0; };
+const netEur = e => (+e.eur || 0) - (+e.tf_back || 0); // what it really cost after the tax-free money came back
+const myShare = e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return e.priv ? (e.by === ME ? netEur(e) : 0) : ps.includes(ME) ? netEur(e) / ps.length : 0; };
 function expAll() { return S.expenses.concat(S.pending.map(p => Object.assign({ pending: true, id: "p" + p.ts }, p))).sort((a, b) => (b.ts || 0) - (a.ts || 0)); }
 function expSum(list) { list = shared(list); const s = {}; PEOPLE.forEach(p => s[p] = { paid: 0, share: 0 }); let tot = 0;
-  list.forEach(e => { const eur = +e.eur || 0; const parts = (e.parts && e.parts.length ? e.parts : PEOPLE).filter(p => s[p]); if (!parts.length) return; tot += eur; if (s[e.payer]) s[e.payer].paid += eur; parts.forEach(p => s[p].share += eur / parts.length); });
+  list.forEach(e => { const eur = (+e.eur || 0) - (+e.tf_back || 0); const parts = (e.parts && e.parts.length ? e.parts : PEOPLE).filter(p => s[p]); if (!parts.length) return; tot += eur; if (s[e.payer]) s[e.payer].paid += eur; parts.forEach(p => s[p].share += eur / parts.length); });
   return { tot, s }; }
 function settle(s) { const bal = PEOPLE.map(p => ({ p, v: Math.round((s[p].paid - s[p].share) * 100) / 100 }));
   const cr = bal.filter(x => x.v > .009).sort((a, b) => b.v - a.v), db = bal.filter(x => x.v < -.009).map(x => ({ p: x.p, v: -x.v })).sort((a, b) => b.v - a.v); const out = []; let i = 0, j = 0;
@@ -1109,6 +1114,54 @@ function renderMine(all) {
   $("#expList").innerHTML = `<div class="card mt"><ul class="list">${rows.length ? rows.map(({ e, priv }) => `<li><div class="grow"><b>${priv ? "🔒 " : "👭 "}${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${priv ? "şəxsi" : esc(e.payer) + " ödədi · sənin payın"} · ${fmtT(e.ts)}</span></div><span class="km">${fm(myShare(e))} €<br><span class="dim" style="font-weight:500">${fm(myShare(e) * r.azn)} ₼</span></span>${priv && !e.pending ? `<button class="btn s" data-ed="${esc(e.id)}" aria-label="Düzəlt">✎</button><button class="btn s" data-del="${esc(e.id)}">✕</button>` : ""}</li>`).join("") : `<li class="mute">Hələ heç nə yoxdur. Yuxarıdan şəxsi xərc əlavə et (məs. 👗 paltar).</li>`}</ul></div>`;
   bindDel();
 }
+/* ---------- tax-free: ask after a big purchase, and later ask how much really came back ---------- */
+function tfAsk(list) {
+  const no = LS.get("tfNo", []);
+  list = (list || S.expenses.filter(e => +e.eur >= TF_MIN && !e.tf && (e.payer === ME || e.by === ME))).filter(e => !no.includes(e.id));
+  if (!list.length) { goView("exp"); return; }
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">🧾 Tax-free formu aldınız?</h3><div class="sm mute" style="text-align:left">75 €-dan çox alışda ≈12% geri qayıdır. Formu aldınızsa “Bəli” basın — 20 noyabrda hava limanında xatırladacam.</div>
+   ${list.map(e => `<div class="card mt" style="text-align:left"><b>${esc(e.d)}</b><div class="sm dim">${fm(+e.eur)} € · ≈ ${fm(tfBack(+e.eur))} € geri</div><div class="row mt"><button class="btn grow" data-tfno="${esc(e.id)}">Xeyr</button><button class="btn pri grow" data-tfyes="${esc(e.id)}">✓ Bəli, aldım</button></div></div>`).join("")}
+   <button class="btn wide mt" id="tfClose">Bağla</button>`;
+  const done = el => { el.closest(".card").remove(); if (!$("#bigBox [data-tfyes]")) $("#bigModal").classList.remove("on"); };
+  $$("[data-tfyes]").forEach(b => b.onclick = async () => { try { await api("exp.tf", { id: b.dataset.tfyes, tf: true }); const e = S.expenses.find(x => x.id === b.dataset.tfyes); if (e) e.tf = true; LS.set("expCache", S.expenses); toast("✓ Tax-free qeyd olundu"); renderExpData(); done(b); } catch (err) { toast("Alınmadı: " + aiErr(err)); } });
+  $$("[data-tfno]").forEach(b => b.onclick = () => { LS.set("tfNo", LS.get("tfNo", []).concat(b.dataset.tfno)); done(b); });
+  $("#tfClose").onclick = () => $("#bigModal").classList.remove("on");
+  $("#bigModal").classList.add("on");
+}
+function tfBackDialog(all) {
+  const list = S.expenses.filter(e => e.tf && !e.priv && (all || e.payer === ME)).concat(S.expenses.filter(e => e.tf && e.priv && e.by === ME));
+  if (!list.length) { toast("Tax-free işarəli xərc yoxdur"); goView("exp"); return; }
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">🧾 Tax-free nə qədər qayıtdı?</h3><div class="sm mute" style="text-align:left">Kartınıza və ya nağd qayıdan məbləği yazın. Hesablaşma özü düzələcək: geri qayıdan pul xərcə qatılanlar arasında bölünür.</div>
+   ${list.map(e => `<div class="card mt" style="text-align:left"><b>${esc(e.d)}</b><div class="sm dim">${fm(+e.eur)} € · ${esc(e.payer)} ödəyib · gözlənilən ≈ ${fm(tfBack(+e.eur))} €${e.tf_back != null ? ` · <b>qeyd olunub: ${fm(+e.tf_back)} €</b>` : ""}</div>
+     <div class="conv mt"><div class="in"><input inputmode="decimal" data-tfin="${esc(e.id)}" placeholder="${String(Math.round(tfBack(+e.eur) * 100) / 100).replace(".", ",")}" value="${e.tf_back != null ? String(e.tf_back).replace(".", ",") : ""}"><span class="cur">€</span></div></div>
+     <div class="row mt"><button class="btn grow" data-tfwait="${esc(e.id)}">⏳ Hələ gəlməyib</button><button class="btn pri grow" data-tfsave="${esc(e.id)}">💾 Qeyd et</button></div></div>`).join("")}
+   <button class="btn wide mt" id="tfClose">Bağla</button>`;
+  const save = async (id, back) => {
+    try { const j = await api("exp.tfback", { id, back }); const i = S.expenses.findIndex(x => x.id === id); if (i >= 0) S.expenses[i] = j.row; LS.set("expCache", S.expenses); renderExpData(); toast(back == null ? "Yaxşı — sonra yenə soruşacağam" : "✓ Qeyd olundu — hesablaşma yeniləndi"); }
+    catch (err) { toast("Alınmadı: " + aiErr(err)); }
+  };
+  $$("[data-tfsave]").forEach(b => b.onclick = async () => { const v = toNum($(`[data-tfin="${b.dataset.tfsave}"]`).value); if (!(v >= 0)) { toast("Məbləği yaz"); return; } await save(b.dataset.tfsave, v); b.closest(".card").style.opacity = ".6"; });
+  $$("[data-tfwait]").forEach(b => b.onclick = async () => { await save(b.dataset.tfwait, null); b.closest(".card").style.opacity = ".6"; });
+  $("#tfClose").onclick = () => $("#bigModal").classList.remove("on");
+  $("#bigModal").classList.add("on");
+}
+/* ---------- 🔔 inbox: every notification can be read again inside the app ---------- */
+S.inbox = LS.get("inbox", []);
+function renderBell() {
+  const b = $("#bellBtn"); if (!b) return;
+  const seen = +LS.get("inboxSeen", 0), n = (S.inbox || []).filter(x => x.t > seen).length;
+  b.innerHTML = `🔔${n ? `<i class="bdg">${n > 9 ? "9+" : n}</i>` : ""}`;
+}
+if ($("#bellBtn")) $("#bellBtn").onclick = () => openInbox();
+setTimeout(renderBell, 0);
+function openInbox() {
+  const L = S.inbox || [];
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">🔔 Bildirişlər</h3>${L.length ? L.map((x, i) => `<button class="card mt" data-ib="${i}" style="display:block;width:100%;text-align:left;border:1px solid var(--line)"><div class="sm dim">${fmtT(x.t)}</div><b>${esc(x.title)}</b>${x.body ? `<div class="sm" style="white-space:pre-line;margin-top:4px">${esc(x.body)}</div>` : ""}</button>`).join("") : `<div class="mute mt">Hələ bildiriş yoxdur.</div>`}<button class="btn wide mt" id="ibClose">Bağla</button>`;
+  $$("[data-ib]").forEach(b => b.onclick = () => { const x = L[+b.dataset.ib]; const g = (String(x.url || "").match(/go=([a-z]+)/) || [])[1]; $("#bigModal").classList.remove("on"); if (g) handleGo(g); });
+  $("#ibClose").onclick = () => $("#bigModal").classList.remove("on");
+  LS.set("inboxSeen", Date.now()); renderBell(); useTrack("inbox");
+  $("#bigModal").classList.add("on");
+}
 function editExp(id) {
   const e = S.expenses.find(x => x.id === id); if (!e) return;
   const st = { payer: e.payer, parts: (e.parts && e.parts.length ? e.parts : PEOPLE).slice(), tf: !!e.tf, cur: e.cur === "AZN" ? "AZN" : "EUR" };
@@ -1135,7 +1188,7 @@ function editExp(id) {
   draw(); $("#bigModal").classList.add("on");
 }
 function bindDel() {
-  $$("[data-ed]").forEach(b => b.onclick = () => editExp(b.dataset.ed));
+  $$("[data-ed]").forEach(b => { b.onclick = ev => { ev.stopPropagation(); editExp(b.dataset.ed); }; const li = b.closest("li"); if (li) { li.style.cursor = "pointer"; li.onclick = ev => { if (ev.target.closest("button,a")) return; editExp(b.dataset.ed); }; } });
   $$("[data-del]").forEach(b => { let armed = false; b.onclick = async () => {
     if (!armed) { armed = true; b.textContent = "Sil?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✕"; b.classList.remove("pri"); }, 2500); return; }
     try { await api("exp.del", { id: b.dataset.del }); S.expenses = S.expenses.filter(x => x.id !== b.dataset.del); LS.set("expCache", S.expenses); renderExpData(); } catch (e) { toast("Silinmədi: " + aiErr(e)); } }; });
@@ -1218,7 +1271,7 @@ function renderExp(force) {
       const r = R(), mine = expUI.mode === "mine";
       const row = { d: $("#expD").value.trim() || expUI.cat || "Xərc", eur: Math.round((expUI.cur === "EUR" ? v : v / r.azn) * 100) / 100, orig: v, cur: expUI.cur, payer: mine ? ME : expUI.payer, parts: mine ? [ME] : expUI.parts.slice(), by: ME || "", ts: Date.now(), tf: !!expUI.tf, priv: mine, cat: expUI.cat || null };
       $("#expA").value = ""; $("#expD").value = ""; $("#rcOut").innerHTML = ""; upd(); $$("#expCats .chip").forEach(x => x.classList.remove("on")); expUI.cat = ""; expUI.tf = false; $("#expTf").classList.remove("on");
-      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); }
+      try { const j = await api("exp.add", { row }); S.expenses.unshift(j.row); LS.set("expCache", S.expenses); toast(row.priv ? "✓ Şəxsi xərc yazıldı 🔒" : "✓ Əlavə olundu — hamı görür"); if (+j.row.eur >= TF_MIN && !j.row.tf) setTimeout(() => tfAsk([j.row]), 700); }
       catch (err) { S.pending.push(row); LS.set("expPending", S.pending); toast("📱 İnternet yoxdur — sonra göndəriləcək"); }
       renderExpData();
     };
@@ -1233,19 +1286,21 @@ function renderExpData() {
   if (expUI.mode === "mine") return renderMine(all);
   $("#mineBox").innerHTML = "";
   const list = shared(all), { tot, s } = expSum(list), st = settle(s);
+  setTimeout(() => { if ($("#tfBackBtn")) $("#tfBackBtn").onclick = () => tfBackDialog(true); }, 0);
   setTimeout(() => $$("[data-paid]").forEach(b => { let armed = false; b.onclick = () => { if (!armed) { armed = true; b.textContent = "Əminsən?"; b.classList.add("pri"); setTimeout(() => { armed = false; b.textContent = "✓ Ödəndi"; b.classList.remove("pri"); }, 3000); return; } markPaid(st[+b.dataset.paid]); }; }), 0);
   $("#expSync").innerHTML = S.online ? `<span class="sync">☁️ Ortaq — hamı eyni siyahını görür</span>` : `<span class="sync warn">📱 Oflayn — ${S.pending.length} xərc göndərilməyi gözləyir</span>`;
   $("#expSum").innerHTML = `<div class="card mt"><div class="sm dim">Ümumi (${list.length} xərc)</div><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:32px">${fm(tot)} €</h2><span class="mute">≈ ${fm(tot * r.azn)} ₼</span></div>
    <div class="mt">${PEOPLE.map(p => { const b = s[p].paid - s[p].share; return `<div class="person"><div><b>${p}${p === ME ? " (sən)" : ""}</b><span class="s2">Payı ${fm(s[p].share)} € · Ödədi ${fm(s[p].paid)} €</span></div><div class="bal ${b > .009 ? "pos" : b < -.009 ? "neg" : ""}">${b > .009 ? "+" : ""}${fm(b)} €<span class="s2" style="font-weight:500">${b > .009 ? "alacaq" : b < -.009 ? "verəcək" : "bərabər"}</span></div></div>`; }).join("")}</div>
    ${(() => { const t = list.filter(e => e.tf); if (!t.length) return ""; const back = t.reduce((a, e) => a + tfBack(+e.eur), 0);
-     return `<div class="alert mt" style="background:#EEF6FF"><span>🧾</span><div><b>Tax-free: ${t.length} çek · ≈ ${fm(back)} € geri</b><span class="mute">20 noyabrda hava limanında, qeydiyyatdan ƏVVƏL gömrükdə möhürlət. Mallar istifadə olunmamış, çeklər və pasport yanında olsun.</span></div></div>`; })()}
+     const got = t.filter(e => e.tf_back != null), real = got.reduce((a, e) => a + (+e.tf_back || 0), 0), expGot = got.reduce((a, e) => a + tfBack(+e.eur), 0);
+     return `<div class="alert mt" style="background:#EEF6FF"><span>🧾</span><div><b>Tax-free: ${t.length} çek · ≈ ${fm(back)} € gözlənilir</b>${got.length ? `<span>✅ Qayıdıb: <b>${fm(real)} €</b> (${got.length} çek, gözlənilən ≈ ${fm(expGot)} €${Math.abs(real - expGot) > 1 ? `, fərq ${real > expGot ? "+" : ""}${fm(real - expGot)} €` : ""}) — hesablaşmaya daxildir</span>` : ""}<span class="mute">20 noyabrda hava limanında, qeydiyyatdan ƏVVƏL gömrükdə möhürlət. Mallar istifadə olunmamış, çeklər və pasport yanında olsun.</span><button class="btn s mt" id="tfBackBtn">🧾 Qayıdan məbləği yaz</button></div></div>`; })()}
    <div class="mt"><b>🤝 Hesablaşma</b>${st.length ? st.map((x, i) => `<div class="settle" style="display:flex;align-items:center;gap:8px"><div class="grow"><b>${x.from}</b> → <b>${x.to}</b>: ${fm(x.v)} € <span class="dim">(${fm(x.v * r.azn)} ₼)</span></div>${x.from === ME || x.to === ME ? `<button class="btn s" data-paid="${i}">✓ Ödəndi</button>` : ""}</div>`).join("") : `<div class="sm mute">Hamı bərabərdir. 🎉</div>`}</div></div>`;
   const v = expUI.view, shown = v === "all" ? list : list.filter(e => e.payer === v || (e.parts || PEOPLE).includes(v));
   const my = v !== "all" ? shown.reduce((a, e) => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE; return a + (ps.includes(v) ? (+e.eur || 0) / ps.length : 0); }, 0) : 0;
   const ft = fmtT;
   $("#expList").innerHTML = `${v !== "all" ? `<div class="card"><b>${v}</b>: öz payı ${fm(my)} € (≈ ${fm(my * r.azn)} ₼) · ödədiyi ${fm(s[v].paid)} €</div>` : ""}
    <div class="card mt"><ul class="list">${shown.length ? shown.map(e => { const ps = e.parts && e.parts.length ? e.parts : PEOPLE;
-     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-ed="${esc(e.id)}" aria-label="Düzəlt">✎</button><button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
+     return `<li><div class="grow"><b>${esc(e.d)}${e.pending ? " 📱" : ""}${e.tf ? ` <span class="tag" style="background:#EEF6FF;color:#2F6FB5">🧾 tax-free${e.tf_back != null ? " · " + fm(+e.tf_back) + " € qayıdıb" : ""}</span>` : ""}</b><span class="s2">${esc(e.payer)} ödədi · ${ps.length === 3 ? "hamı üçün" : esc(ps.join(", ")) + " üçün"}</span><span class="s2">${ft(e.ts)}${e.cur === "AZN" ? ` · ${fm(+e.orig)} ₼` : ""}</span></div><span class="km">${fm(+e.eur)} €<br><span class="dim" style="font-weight:500">${v !== "all" && ps.includes(v) ? "payı " + fm(e.eur / ps.length) : fm(e.eur * r.azn) + " ₼"}</span></span>${e.pending ? "" : `<button class="btn s" data-ed="${esc(e.id)}" aria-label="Düzəlt">✎</button><button class="btn s" data-del="${esc(e.id)}">✕</button>`}</li>`; }).join("") : `<li class="mute">Hələ xərc yoxdur.</li>`}</ul></div>`;
   bindDel();
 }
 
@@ -1575,7 +1630,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "33";
+const APPV = "34";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });

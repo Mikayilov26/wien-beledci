@@ -100,9 +100,10 @@ Deno.serve(async (req) => {
         if (ex.error) throw ex.error;
         if (kv.error) throw kv.error;
         const kvm: Record<string, unknown> = {};
-        for (const r of kv.data ?? []) if (r.key !== "pushlog" && r.key !== "errlog" && !r.key.startsWith("sbx:") && !r.key.startsWith("nudge")) kvm[r.key] = r.value;
+        for (const r of kv.data ?? []) if (r.key !== "pushlog" && r.key !== "errlog" && !r.key.startsWith("sbx:") && !r.key.startsWith("nudge") && !r.key.startsWith("inbox:") && !r.key.startsWith("tfask")) kvm[r.key] = r.value;
         if (admin) for (const r of kv.data ?? []) if (r.key.startsWith("sbx:")) kvm[r.key.slice(4)] = r.value; // admin sees own test state on top
-        return json({ expenses: ex.data, kv: kvm, ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
+        const ib = (kv.data ?? []).find((r: any) => r.key === "inbox:" + (admin ? "admin" : who));
+        return json({ expenses: ex.data, kv: kvm, inbox: ib?.value ?? [], ai: aiStatus.claude || aiStatus.gemini, providers: aiStatus, priceCount: pl.count ?? 0, who, admin });
       }
 
       case "exp.add": {
@@ -147,6 +148,18 @@ Deno.serve(async (req) => {
         const { error } = await sb.from("expenses").update({ tf: b.tf === true }).eq("id", String(b.id)).eq("sbx", admin);
         if (error) throw error;
         return json({ ok: true });
+      }
+      case "exp.tfback": {
+        // the real tax-free money that came back (any of the people in the expense may write it; null = not yet)
+        if (!who) return json({ error: "no_user" }, 403);
+        const { data: row } = await sb.from("expenses").select("payer,parts,sbx,eur").eq("id", String(b.id)).maybeSingle();
+        if (!row || row.sbx !== admin) return json({ error: "not_found" }, 404);
+        if (row.payer !== who && !(row.parts ?? []).includes(who)) return json({ error: "forbidden" }, 403);
+        const v = b.back === null ? null : Math.round(Number(b.back) * 100) / 100;
+        if (v !== null && !(v >= 0 && v <= Number(row.eur))) return json({ error: "invalid" }, 400);
+        const { data, error } = await sb.from("expenses").update({ tf_back: v, tf: true }).eq("id", String(b.id)).select().single();
+        if (error) throw error;
+        return json({ row: data });
       }
       case "exp.del": {
         const { data: row } = await sb.from("expenses").select("priv,by").eq("id", String(b.id)).maybeSingle();
@@ -307,6 +320,16 @@ Deno.serve(async (req) => {
         const res = b.dry ? [] : await sendToR(to, msg);
         return json({ subscribed: (subs ?? []).map((x: any) => x.who), results: res });
       }
+      case "push.send": {
+        // admin only: a one-off message written by Kənan to chosen girls (copy to the test phone)
+        if (!admin) return json({ error: "forbidden" }, 403);
+        const to = (Array.isArray(b.to) ? b.to : PEOPLE).filter((p: string) => PEOPLE.includes(p));
+        const msg = { title: String(b.title ?? "").slice(0, 80), body: String(b.body ?? "").slice(0, 400), url: /^\.\/\?go=[a-z]+$/.test(String(b.url ?? "")) ? b.url : "./" };
+        if (!msg.title) return json({ error: "invalid" }, 400);
+        const res = await sendToR(to, msg);
+        await sendToR(["admin"], { ...msg, title: `📋 ${to.join(", ")}: ${msg.title}` });
+        return json({ results: res, notSubscribed: to.filter((p: string) => !res.some((r) => r.who === p)) });
+      }
       case "tts": return await freeTts(b);
       case "gt": return await freeTranslate(b);
       case "ai": return await aiText(b);
@@ -326,6 +349,14 @@ async function sendToR(people: string[], msg: { title: string; body: string; url
   const pub = await cfg("vapid_pub"), priv = await cfg("vapid_priv");
   if (!pub || !priv) return [{ who: "-", ep: "", status: 0, err: "no_vapid" }];
   webpush.setVapidDetails("https://wien-beledci.onrender.com", pub, priv);
+  // keep a copy in each person's in-app inbox (🔔 list) — also for those who have notifications switched off
+  for (const who of people) {
+    try {
+      const { data: ib } = await sb.from("kv").select("value").eq("key", "inbox:" + who).maybeSingle();
+      const list = Array.isArray(ib?.value) ? ib!.value : [];
+      await sb.from("kv").upsert({ key: "inbox:" + who, value: [{ t: Date.now(), title: msg.title.slice(0, 90), body: String(msg.body ?? "").slice(0, 500), url: msg.url ?? "" }, ...list].slice(0, 60), updated_at: new Date().toISOString() });
+    } catch { /* never block sending */ }
+  }
   const { data } = await sb.from("push_subs").select("endpoint,sub,who").in("who", people);
   const out: PushRes[] = [];
   for (const s of data ?? []) {
@@ -390,6 +421,7 @@ async function pushTick() {
     }
   }
   try { await nudgeRun(now, {}); } catch { /* nudges must never block reminders */ }
+  try { await tfTick(now); } catch (e) { await logErr("tfTick", "", e); }
   const { data } = await sb.from("bookings").select("*").eq("sent", false).lte("at", new Date(now + 1440 * 60000).toISOString()).gte("at", new Date(now - 3600000).toISOString());
   let sent = 0;
   for (const bk of data ?? []) {
@@ -404,6 +436,39 @@ async function pushTick() {
     await sb.from("bookings").update({ sent: true }).eq("id", bk.id);
   }
   return { ok: true, sent };
+}
+
+// 🧾 tax-free: (1) a big purchase written without the tax-free mark → ask the payer once after 15 min;
+// (2) after the flight home, and again later, ask how much really came back
+const TF_ASK_BACK: Record<string, string> = { "2026-11-20": "17:00", "2026-11-22": "16:00", "2026-11-25": "16:00" }; // Vienna time (= 20:00 / 19:00 Baku)
+async function tfTick(now: number) {
+  const { data: st } = await sb.from("kv").select("value").eq("key", "tfask").maybeSingle();
+  const state: any = st?.value ?? { asked: [], back: {} };
+  let dirty = false;
+  const { data: big } = await sb.from("expenses").select("id,d,eur,payer,by,priv").eq("sbx", false).eq("tf", false).gte("eur", 75.01)
+    .lte("created_at", new Date(now - 15 * 60000).toISOString()).gte("created_at", new Date(now - 24 * 3600000).toISOString());
+  for (const e of big ?? []) {
+    if (state.asked.includes(e.id)) continue;
+    state.asked.push(e.id); dirty = true;
+    const msg = { title: "🧾 Tax-free ala bilərsiniz", body: `${e.d}: ${e.eur} € — 75 €-dan çoxdur, təxminən ${Math.round(e.eur * 0.12)} € geri qayıda bilər. Kassada Tax-Free formu aldınızsa, tətbiqdə “Bəli” basın. Almamısınızsa, mağazadan çek ilə istəyin.`, url: "./?go=tf" };
+    const to = [...new Set([e.payer, e.by].filter((x: string) => PEOPLE.includes(x)))];
+    await sendToR(to, msg);
+    if (!e.priv) await sendToR(["admin"], { ...msg, title: `📋 ${to.join(", ")}: ${msg.title}` }); // a private expense stays private, even from the test phone
+  }
+  const vp = vParts(now), at = TF_ASK_BACK[vp.date];
+  if (at && vp.time >= at && vp.time < addMin(at, 120)) {
+    const done: string[] = state.back[vp.date] ?? [];
+    const { data: tfs } = await sb.from("expenses").select("payer,eur").eq("sbx", false).eq("tf", true).is("tf_back", null);
+    const payers = [...new Set((tfs ?? []).map((x: any) => x.payer))].filter((p) => PEOPLE.includes(p) && !done.includes(p));
+    for (const p of payers) {
+      const mine = (tfs ?? []).filter((x: any) => x.payer === p), exp = Math.round(mine.reduce((a: number, x: any) => a + Number(x.eur) * 0.12, 0));
+      const msg = { title: "🧾 Tax-free nə qədər qayıtdı?", body: `${mine.length} çek üzrə təxminən ${exp} € gözlənilir. Kartınıza və ya nağd nə qədər qayıtdığını tətbiqdə yazın — hesablaşma özü düzələcək. Hələ gəlməyibsə, “Hələ gəlməyib” basın, sonra yenə soruşacağam.`, url: "./?go=tfback" };
+      await sendToR([p], msg); await sendToR(["admin"], { ...msg, title: `📋 ${p}-a getdi: ${msg.title}` });
+      done.push(p); dirty = true;
+    }
+    state.back[vp.date] = done;
+  }
+  if (dirty) await sb.from("kv").upsert({ key: "tfask", value: { ...state, asked: state.asked.slice(-200) }, updated_at: new Date().toISOString() });
 }
 
 // 💌 friendly "try this" nudges: max 2–3 a day per girl, picked from what she has not used yet; a copy goes to Kənan's test phone
