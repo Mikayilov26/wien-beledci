@@ -290,6 +290,7 @@ async function sync() {
     if (j.kv && j.kv.prog) progMerge(j.kv.prog);
     if (Array.isArray(j.inbox)) { S.inbox = j.inbox; LS.set("inbox", j.inbox.slice(0, 60)); renderBell(); }
     if (j.kv && j.kv.hotel) { const hc = JSON.stringify(j.kv.hotel) !== JSON.stringify(S.hotel); S.hotel = j.kv.hotel; LS.set("hotel", S.hotel); if (hc) mapHotel(); }
+    if (j.kv) { const pk = j.kv.pick || null; if (JSON.stringify(pk) !== JSON.stringify(S.pick || null)) { S.pick = pk; LS.set("pick", pk); mapPick(); } }
     S.friends = {}; Object.keys(j.kv || {}).forEach(k => { if (k.startsWith("loc:")) S.friends[k.slice(4)] = j.kv[k]; }); mapFriends(); renderFamily();
     await flushPending();
   } catch (e) { S.online = false; if (e.code === "forbidden" || e.code === "no_user") { syncing = false; return gate("Bu link işləmir. Kənanın göndərdiyi şəxsi linki yenidən aç."); } }
@@ -591,6 +592,7 @@ function handleGo(go) {
   else if (go === "mem") { goView("home"); const t = $('[data-act="book"]'); if (t) t.click(); }
   else if (go === "cam") pulse("#camIn"); else if (go === "price") pulse("#priceIn"); else if (go === "menu") pulse("#menuIn");
   else if (go === "reco") pulse("#recoBtn");
+  else if (go === "pick") { goView("map"); const t0 = Date.now(), w = () => { if (map && mapReady) { mapPick(true); if ((pickList()[0])) pickSheet(0); } else if (Date.now() - t0 < 8000) setTimeout(w, 300); }; setTimeout(w, 200); }
   else if (go === "tf") { goView("exp"); setTimeout(() => tfAsk(), 300); }
   else if (go === "tfback") { goView("exp"); setTimeout(() => tfBackDialog(false), 300); }
   else if (go === "inbox") openInbox();
@@ -1324,7 +1326,7 @@ function renderExpData() {
 
 /* ---------- map (MapLibre + OpenFreeMap: free, clean Google-like vector map, no key) ---------- */
 let map = null, mapReady = false, selPoi = null, lastRoute = null;
-const MK = { poi: [], me: null, hotel: null, fr: [] };
+const MK = { poi: [], me: null, hotel: null, fr: [], pick: [] };
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 const CEMO = { tarix: "🏛", muzey: "🖼", yemek: "🍽", bazar: "🎄", kilse: "⛪", park: "🌳", shop: "🛍", metro: "Ⓜ" };
 const MAJOR = new Set(["stephansdom", "hofburg", "staatsoper", "rathaus", "karlskirche", "belvedere", "schonbrunn", "gloriette", "riesenrad", "hundertwasser", "khm", "naschmarkt", "parlament", "votiv", "xm-rathaus", "albertina", "central", "domschnitzel", "zaytouna", "xm-schonbrunn", "shop-kaerntner", "shop-graben", "shop-goldenes", "shop-wienmitte", "shop-mahue", "xm-karlsplatz", "xm-spittelberg"]);
@@ -1391,7 +1393,7 @@ function initMap() {
   map.on("click", () => { if (selPoi) { selPoi = null; drawPOI(); } });
   map.on("error", () => {}); // offline tiles: keep the pins working
   map.on("webglcontextlost", () => { try { setTimeout(() => map && map.triggerRepaint(), 500); } catch (e) {} });
-  drawPOI(); renderNear(); mapHotel(); mapFriends(); mapMe(); mapAlerts();
+  drawPOI(); renderNear(); mapHotel(); mapFriends(); mapMe(); mapAlerts(); mapPick();
   if (!meHere() && S.filter == null) setTimeout(() => fitTo(planStops().concat(S.hotel ? [S.hotel] : [])), 50);
 }
 // today's plan stops (before the trip: day 1), numbered in order
@@ -1648,7 +1650,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "36";
+const APPV = "37";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1917,3 +1919,32 @@ function boot2() {
   boot2();
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 })();
+
+/* ---------- 📍 suggested places sent by Kənan (kv 'pick'): pins on the map + a sheet with photos / route / site ---------- */
+S.pick = LS.get("pick", null);
+const pickList = () => { const p = S.pick; if (!p || !Array.isArray(p.items) || (p.until && Date.now() > p.until)) return []; return p.items.filter(x => x && typeof x.lat === "number" && typeof x.lng === "number"); };
+function mapPick(fit) {
+  if (!map) return; MK.pick.forEach(m => m.remove()); MK.pick = [];
+  const L = pickList();
+  L.forEach((x, i) => { const el = document.createElement("div"); el.className = "friend"; el.style.background = "#FFF4E5"; el.innerHTML = `<i style="background:#C8102E">${i + 1}</i>${esc(x.e || "📍")} ${esc(x.name)}`; el.addEventListener("click", ev => { ev.stopPropagation(); pickSheet(i); }); MK.pick.push(addMk(el, x.lng, x.lat, "left")); });
+  if (fit && L.length) { const b = new (ML().LngLatBounds)(); L.forEach(x => b.extend([x.lng, x.lat])); const me = S.friends && ME && S.friends[ME]; if (me && me.lat) b.extend([me.lng, me.lat]); map.fitBounds(b, { padding: { top: 90, bottom: Math.round(innerHeight * 0.45), left: 50, right: 90 }, maxZoom: 16, duration: 600 }); }
+}
+function pickSheet(i) {
+  const L = pickList(), x = L[i]; if (!x) return;
+  const gq = encodeURIComponent(x.name + " " + (x.addr || "Wien"));
+  const photos = `https://www.google.com/maps/search/?api=1&query=${gq}${x.pid ? "&query_place_id=" + encodeURIComponent(x.pid) : ""}`;
+  const route = `https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lng}&travelmode=walking`;
+  const link = (u, t) => /^https:\/\//.test(u || "") ? `<a class="btn grow" href="${esc(u)}" target="_blank" rel="noopener">${t}</a>` : "";
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">${esc(x.e || "📍")} ${esc(x.name)}</h3>
+   <div class="sm" style="text-align:left">${x.rating ? `⭐ ${esc(String(x.rating))}${x.n ? ` · ${esc(String(x.n))} rəy` : ""} · ` : ""}${esc(x.addr || "")}</div>
+   ${x.note ? `<div class="sm mute mt" style="text-align:left">${esc(x.note)}</div>` : ""}
+   <div class="row mt">${link(photos, "📸 Şəkillər və rəylər")}</div>
+   <div class="row mt">${link(route, "🧭 Piyada marşrut")}${link(x.web, "🌐 Sayt / menyu")}</div>
+   ${x.ig ? `<div class="row mt">${link(x.ig, "📷 Instagram")}</div>` : ""}
+   ${x.tel ? `<div class="row mt"><a class="btn grow" href="tel:${esc(x.tel.replace(/[^+\d]/g, ""))}">📞 Zəng et / masa sifariş</a></div>` : ""}
+   <div class="row mt">${L.length > 1 ? L.map((y, k) => `<button class="btn grow ${k === i ? "pri" : ""}" data-pk="${k}">${k + 1}</button>`).join("") : ""}</div>
+   <button class="btn wide mt" id="pkClose">Bağla</button>`;
+  $$("[data-pk]").forEach(b => b.onclick = () => { const k = +b.dataset.pk; mapGo(L[k].lat, L[k].lng, 16); pickSheet(k); });
+  $("#pkClose").onclick = () => $("#bigModal").classList.remove("on");
+  $("#bigModal").classList.add("on"); useTrack("pick");
+}
