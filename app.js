@@ -592,7 +592,7 @@ function handleGo(go) {
   else if (go === "mem") { goView("home"); const t = $('[data-act="book"]'); if (t) t.click(); }
   else if (go === "cam") pulse("#camIn"); else if (go === "price") pulse("#priceIn"); else if (go === "menu") pulse("#menuIn");
   else if (go === "reco") pulse("#recoBtn");
-  else if (go === "pick") { goView("map"); const t0 = Date.now(), w = () => { if (map && mapReady) { mapPick(true); if ((pickList()[0])) pickSheet(0); } else if (Date.now() - t0 < 8000) setTimeout(w, 300); }; setTimeout(w, 200); }
+  else if (go === "pick") { goView("map"); const t0 = Date.now(), w = () => { if (map && mapReady) { if (pickList().length) { if (S.filter !== "steak") setFilter("steak"); else { drawPOI(); renderNear(); } } } else if (Date.now() - t0 < 8000) setTimeout(w, 300); }; setTimeout(w, 200); }
   else if (go === "tf") { goView("exp"); setTimeout(() => tfAsk(), 300); }
   else if (go === "tfback") { goView("exp"); setTimeout(() => tfBackDialog(false), 300); }
   else if (go === "inbox") openInbox();
@@ -1403,7 +1403,7 @@ function planStops() {
   day.items.forEach(it => { const id = it[3]; if (!id || id === "hotel" || /^u-/.test(id) || seen.has(id) || !byId[id]) return; seen.add(id); out.push(Object.assign({}, byId[id], { _n: out.length + 1, _t: it[0] })); });
   return out;
 }
-function visiblePois() { return S.filter == null ? planStops() : POI.filter(p => S.filter === "all" ? p.cat !== "metro" : p.cat === S.filter); }
+function visiblePois() { if (S.filter === "steak") return pickPois(); return S.filter == null ? planStops() : POI.filter(p => S.filter === "all" ? p.cat !== "metro" : p.cat === S.filter); }
 function pinEl(p, num, lbl) {
   const el = document.createElement("div");
   el.className = "pin" + (selPoi === p.id ? " sel" : "") + (p.g && p.g < MIN_R ? " low" : "");
@@ -1490,8 +1490,13 @@ function drawRoute(line, real, fit = true) {
   if (fit) { const b = new (ML().LngLatBounds)(); line.forEach(c => b.extend([c.lng, c.lat])); map.fitBounds(b, { padding: { top: 80, bottom: Math.round(innerHeight * 0.5), left: 40, right: 60 }, maxZoom: 17, duration: 600 }); }
 }
 const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Muzey"], ["yemek", "🍽 Yemək"], ["bazar", "🎄 Bazar"], ["shop", "🛍 Mağaza"], ["kilse", "⛪ Kilsə"], ["park", "🌳 Park"], ["metro", "Ⓜ Metro"]];
-$("#filters").innerHTML = FL.map(([k, t]) => `<button class="chip" data-f="${k}">${t}</button>`).join("");
-$$("#filters .chip").forEach(b => b.onclick = () => setFilter(b.dataset.f));
+function renderFilters() {
+  const fl = (pickList().length ? [["steak", (S.pick && S.pick.chip) || "🥩 Steaklər"]] : []).concat(FL);
+  if (S.filter === "steak" && !pickList().length) S.filter = null;
+  $("#filters").innerHTML = fl.map(([k, t]) => `<button class="chip ${k === "steak" ? "hot" : ""} ${S.filter === k ? "on" : ""}" data-f="${k}" ${k === "steak" ? 'style="background:#C8102E;color:#fff;border-color:#C8102E"' : ""}>${t}</button>`).join("");
+  $$("#filters .chip").forEach(b => b.onclick = () => setFilter(b.dataset.f));
+}
+renderFilters();
 $("#grpBtn").classList.toggle("on", !!S.share);
 $("#grpBtn").onclick = groupSheet;
 $("#hotBtn").onclick = () => { routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
@@ -1505,6 +1510,7 @@ function openPoi(p) {
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
    ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}${PHOTO[p.id] ? `<div class="note">📸 ${esc(PHOTO[p.id][0])} <b>${esc(PHOTO[p.id][1])}</b></div>` : ""}
    <div class="pbtns mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">🗺 Google</a></div>`;
+  if (p.pick) { const x = p.pick, extra = `<div class="pbtns mt"><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">📸 Şəkillər və rəylər</a>${/^https:\/\//.test(x.web || "") ? `<a class="btn" href="${esc(x.web)}" target="_blank" rel="noopener">🌐 Sayt / menyu</a>` : ""}${/^https:\/\/(www\.)?instagram\.com\//.test(x.ig || "") ? `<a class="btn" href="${esc(x.ig)}" target="_blank" rel="noopener">📷 Instagram</a>` : ""}${x.tel ? `<a class="btn" href="tel:${esc(x.tel.replace(/[^+\d]/g, ""))}">📞 Zəng et</a>` : ""}</div>`; $("#sheetBody").insertAdjacentHTML("beforeend", extra); }
   $("#sheet").scrollTop = 0; $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
 function segOff(a, b, pt) { const kx = 111320 * Math.cos(48.2 * Math.PI / 180), ky = 111320; const ax = a.lng * kx, ay = a.lat * ky, bx = b.lng * kx, by = b.lat * ky, px = pt.lng * kx, py = pt.lat * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
@@ -1650,7 +1656,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "37";
+const APPV = "38";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1921,11 +1927,13 @@ function boot2() {
 })();
 
 /* ---------- 📍 suggested places sent by Kənan (kv 'pick'): pins on the map + a sheet with photos / route / site ---------- */
-S.pick = LS.get("pick", null);
-const pickList = () => { const p = S.pick; if (!p || !Array.isArray(p.items) || (p.until && Date.now() > p.until)) return []; return p.items.filter(x => x && typeof x.lat === "number" && typeof x.lng === "number"); };
+S.pick = LS.get("pick", null); try { renderFilters(); } catch (e) {}
+function pickList() { const p = S.pick; if (!p || !Array.isArray(p.items) || (p.until && Date.now() > p.until)) return []; return p.items.filter(x => x && typeof x.lat === "number" && typeof x.lng === "number"); }
+function pickPois() { return pickList().map((x, i) => { const p = { id: "pk" + i, name: x.name, lat: x.lat, lng: x.lng, cat: "yemek", g: x.rating, n: parseInt(String(x.n || "0").replace(/\D/g, "")) || 0, pid: x.pid, d: [x.note, x.addr].filter(Boolean).join(" · "), pick: x }; byId[p.id] = p; return p; }); }
 function mapPick(fit) {
+  try { renderFilters(); } catch (e) {}
   if (!map) return; MK.pick.forEach(m => m.remove()); MK.pick = [];
-  const L = pickList();
+  const L = S.filter === "steak" ? [] : pickList();
   L.forEach((x, i) => { const el = document.createElement("div"); el.className = "friend"; el.style.background = "#FFF4E5"; el.innerHTML = `<i style="background:#C8102E">${i + 1}</i>${esc(x.e || "📍")} ${esc(x.name)}`; el.addEventListener("click", ev => { ev.stopPropagation(); pickSheet(i); }); MK.pick.push(addMk(el, x.lng, x.lat, "left")); });
   if (fit && L.length) { const b = new (ML().LngLatBounds)(); L.forEach(x => b.extend([x.lng, x.lat])); const me = S.friends && ME && S.friends[ME]; if (me && me.lat) b.extend([me.lng, me.lat]); map.fitBounds(b, { padding: { top: 90, bottom: Math.round(innerHeight * 0.45), left: 50, right: 90 }, maxZoom: 16, duration: 600 }); }
 }
