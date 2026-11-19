@@ -802,7 +802,7 @@ let prCur = null;
 async function priceCheck(file) {
   if (!file) return; clearInputs();
   showResult(`<div class="card"><span class="spin"></span> Şəkil hazırlanır…</div>`);
-  let img, th; try { img = await shrink(file, 1280, .82); th = (await shrink(file, 200, .6)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
+  let img, th; try { img = await shrink(file, 2000, .85); th = (await shrink(file, 200, .6)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
   prCur = { img: img.url, thumb: th, p: {} };
   showResult(`<img class="photo" src="${img.url}" alt="" style="max-height:170px;object-fit:cover"><div class="ttl"><h2 id="prT">Etiketi oxuyuram…</h2></div><div class="card" id="prB"><span class="spin"></span> <span class="mute">Marka və artikul tapılır…</span></div>`);
   let err = "";
@@ -813,21 +813,26 @@ async function priceCheck(file) {
 function priceManual() { prCur = { img: null, thumb: null, p: {} }; showResult(`<div class="ttl"><h2 id="prT">Qiyməti yoxla</h2></div><div class="card" id="prB"></div>`); priceForm(""); }
 function priceForm(err) {
   const p = prCur.p, got = p.brand || p.model || p.code;
+  const miss = prCur.img && got ? [!(p.model || p.name_az) && !p.code ? "model / artikul" : "", !p.vienna_eur ? "Vyana qiyməti" : ""].filter(Boolean) : [];
   $("#prT").textContent = got ? "Düzdürmü? Yoxla və axtar" : "Məhsulu yaz";
   $("#prB").innerHTML = `${err ? `<div class="note" style="color:#B23A2B;margin-top:0">⚠️ ${esc(err)}</div>` : ""}
    ${!got && prCur.img && !err ? `<div class="note" style="margin-top:0">Etiketi oxuya bilmədim — markanı və adı özün yaz. Artikul kodu (məs. 1234/567) olsa nəticə daha dəqiq olur.</div>` : ""}
+   ${miss.length ? `<div class="note" style="margin-top:0;color:#8a5a00">⚠️ Etiketdə oxunmadı: <b>${esc(miss.join(", "))}</b>. Etiketi yaxından, kadrı doldurmaqla yenidən çəkin — ya da aşağıda əl ilə yazın.<div class="row mt"><button class="btn grow" id="pfRe">📷 Yenidən çək / seç</button></div></div>` : ""}
    <label class="fld">Marka<input class="inp" id="pfB" value="${esc(p.brand || "")}" placeholder="Zara, Nike, Sephora…" autocapitalize="words"></label>
    <label class="fld">Məhsul / model<input class="inp" id="pfM" value="${esc(p.model || p.name_az || "")}" placeholder="Air Max 90, palto, ətir 50 ml…"></label>
    <div class="row"><label class="fld grow">Artikul / kod<input class="inp" id="pfC" value="${esc(p.code || p.ean || "")}" placeholder="istəyə bağlı"></label><label class="fld" style="width:34%">Vyana €<input class="inp" id="pfE" inputmode="decimal" value="${p.vienna_eur ? String(p.vienna_eur).replace(".", ",") : ""}" placeholder="0"></label></div>
+   <label class="fld">Növ<input class="inp" id="pfK" value="${esc(p.category || "")}" placeholder="çanta, palto, ayaqqabı, ətir…"></label>
    <button class="btn pri wide mt" id="pfGo">🔎 Bakı və Türkiyədə axtar</button>
    <div class="sm dim" style="margin-top:8px;text-align:center">Rəsmi saytlarda və mağazalarda canlı axtarılır · 15–40 san.</div>`;
   $("#pfGo").onclick = () => priceSearch(false);
+  if ($("#pfRe")) $("#pfRe").onclick = () => $("#priceIn").click();
+  if (miss.includes("Vyana qiyməti")) $("#pfE").style.borderColor = "#d99a00";
 }
 async function priceSearch(fresh) {
   const v = id => ($(id) ? $(id).value.trim() : "");
-  if ($("#pfB")) Object.assign(prCur.p, { brand: v("#pfB"), model: v("#pfM"), code: v("#pfC"), vienna_eur: toNum(v("#pfE")) || null });
+  if ($("#pfB")) Object.assign(prCur.p, { brand: v("#pfB"), model: v("#pfM"), code: v("#pfC"), category: v("#pfK"), vienna_eur: toNum(v("#pfE")) || null });
   const p = prCur.p;
-  if (!p.brand && !p.model && !p.code) { toast("Ən azı markanı və ya adı yaz"); return; }
+  if (!p.model && !p.code) { toast("Məhsulun adını və ya artikulunu yaz — yalnız marka ilə axtarış səhv nəticə verir"); if ($("#pfM")) $("#pfM").focus(); return; }
   $("#prT").textContent = [p.brand, p.model].filter(Boolean).join(" · ") || "Məhsul";
   $("#prB").innerHTML = `<span class="spin"></span> <span class="mute">Bakı və Türkiyə saytlarında axtarıram…</span>`;
   try {
@@ -1679,7 +1684,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "40";
+const APPV = "41";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
