@@ -640,10 +640,11 @@ $$("[data-go]").forEach(b => b.onclick = () => goView(b.dataset.go));
 /* ---------- POI display helpers ---------- */
 const MIN_R = 4.2;
 const okFood = p => p.cat !== "yemek" || (p.g || 0) >= MIN_R;
-const LVLS = { 1: "€ · ~5–15 € adambaşı", 2: "€€ · ~15–35 € adambaşı", 3: "€€€ · ~35–60 € adambaşı" };
+const LVLS = { 1: "$ ucuz · 3 nəfərə ~15–45 €", 2: "$$ orta · 3 nəfərə ~45–105 €", 3: "$$$ bahalı · 3 nəfərə ~105–180 €+" };
+const dol = p => p && p.lvl ? "$".repeat(Math.min(3, p.lvl)) : "";
 const rating = p => p.g ? `<span class="rt ${p.g < MIN_R ? "low" : ""}">★ ${String(p.g).replace(".", ",")} <span class="dim" style="font-weight:500">(${p.n >= 1000 ? Math.round(p.n / 1000) + "k" : p.n})</span></span>` : "";
 function pills(p) { const o = openState(p); let s = ""; if (o) s += `<span class="pill ${o.open ? "open" : "closed"}">${o.txt}</span>`; if (p.halal) s += `<span class="pill halal">Halal</span>`; if (p.free) s += `<span class="pill">Pulsuz</span>`; if (p.lvl) s += `<span class="pill">${"€".repeat(p.lvl)}</span>`; return s; }
-const price = p => p.pr || (p.lvl ? LVLS[p.lvl] : "") || (p.free ? "Pulsuz" : "");
+const price = p => (p.lvl ? LVLS[Math.min(3, p.lvl)] : "") || p.pr || (p.free ? "Pulsuz" : "");
 const alertNear = p => todaysAlerts().find(a => a.lat && a.level !== "info" && dist(a, p) <= (a.r || 300));
 
 /* ---------- recommendations ---------- */
@@ -1451,7 +1452,7 @@ function renderNear() {
   } else {
     const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d).slice(0, 10);
     const all = visiblePois().filter(okFood).length;
-    cards = (all ? `<button class="nc" id="listBtn" style="background:#3B3631;color:#fff"><b>☰ Siyahı</b><span style="color:#ddd">${all} yer</span></button>` : "") + l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km · şəhərdən kənar" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq") : ""}</span></button>`).join("");
+    cards = (all ? `<button class="nc" id="listBtn" style="background:#3B3631;color:#fff"><b>☰ Siyahı</b><span style="color:#ddd">${all} yer</span></button>` : "") + l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${dol(p) ? dol(p) + " · " : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km · şəhərdən kənar" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq") : ""}</span></button>`).join("");
   }
   box.innerHTML = cards; box.hidden = !cards; box.scrollLeft = 0;
   box.querySelectorAll("[data-p]").forEach(b => b.onclick = () => selectPoi(b.dataset.p, true));
@@ -1462,7 +1463,7 @@ function openList() {
   const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d);
   const name = ((S.filter === "steak" ? [["steak", (S.pick && S.pick.chip) || "🥩 Steaklər"]] : []).concat(FL).find(x => x[0] === S.filter) || [0, "Yerlər"])[1];
   $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">${esc(name)} · ${l.length}</h3>
-   ${l.map(({ p, d }) => `<button class="card mt" data-lp="${esc(p.id)}" style="display:block;width:100%;text-align:left;border:1px solid var(--line)"><b>${CEMO[p.cat] || ""} ${esc(p.name)}</b><div class="sm" style="margin-top:3px">${p.g ? `<span class="rt">★ ${String(p.g).replace(".", ",")}</span>${p.n ? ` <span class="dim">(${p.n >= 1000 ? Math.round(p.n / 1000) + "k" : p.n})</span>` : ""} · ` : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq piyada") : ""}</div>${p.d ? `<div class="sm dim" style="margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(p.d)}</div>` : ""}</button>`).join("")}
+   ${l.map(({ p, d }) => `<button class="card mt" data-lp="${esc(p.id)}" style="display:block;width:100%;text-align:left;border:1px solid var(--line)"><b>${CEMO[p.cat] || ""} ${esc(p.name)}</b><div class="sm" style="margin-top:3px">${p.g ? `<span class="rt">★ ${String(p.g).replace(".", ",")}</span>${p.n ? ` <span class="dim">(${p.n >= 1000 ? Math.round(p.n / 1000) + "k" : p.n})</span>` : ""} · ` : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq piyada") : ""}</div>${p.lvl ? `<div class="sm" style="margin-top:3px"><b style="color:#2E7D32">${dol(p)}</b> <span class="dim">${esc(LVLS[Math.min(3, p.lvl)].replace(/^\$+ /, ""))}</span></div>` : ""}${p.d ? `<div class="sm dim" style="margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(p.d)}</div>` : ""}</button>`).join("")}
    <button class="btn wide mt" id="lsClose">Bağla</button>`;
   $$("[data-lp]").forEach(b => b.onclick = () => { $("#bigModal").classList.remove("on"); selectPoi(b.dataset.lp, true); });
   $("#lsClose").onclick = () => $("#bigModal").classList.remove("on");
@@ -1678,7 +1679,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "39";
+const APPV = "40";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1951,7 +1952,7 @@ function boot2() {
 /* ---------- 📍 suggested places sent by Kənan (kv 'pick'): pins on the map + a sheet with photos / route / site ---------- */
 S.pick = LS.get("pick", null); try { renderFilters(); } catch (e) {}
 function pickList() { const p = S.pick; if (!p || !Array.isArray(p.items) || (p.until && Date.now() > p.until)) return []; return p.items.filter(x => x && typeof x.lat === "number" && typeof x.lng === "number"); }
-function pickPois() { return pickList().map((x, i) => { const p = { id: "pk" + i, name: x.name, lat: x.lat, lng: x.lng, cat: "yemek", g: x.rating, n: parseInt(String(x.n || "0").replace(/\D/g, "")) || 0, pid: x.pid, d: [x.note, x.addr].filter(Boolean).join(" · "), pick: x }; byId[p.id] = p; return p; }); }
+function pickPois() { return pickList().map((x, i) => { const p = { id: "pk" + i, name: x.name, lat: x.lat, lng: x.lng, cat: "yemek", g: x.rating, n: parseInt(String(x.n || "0").replace(/\D/g, "")) || 0, pid: x.pid, lvl: Math.min(3, +x.lvl || 0) || undefined, d: [x.note, x.addr].filter(Boolean).join(" · "), pick: x }; byId[p.id] = p; return p; }); }
 function mapPick() {
   try { renderFilters(); } catch (e) {}
   if (!map) return; MK.pick.forEach(m => m.remove()); MK.pick = [];
