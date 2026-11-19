@@ -1450,10 +1450,23 @@ function renderNear() {
     cards = st.length ? `<div class="nc lbl0">📅 ${today ? "Bugünkü plan" : "17 noyabr planı"}<span>kateqoriya seç ↑</span></div>` + st.map(p => `<button class="nc" data-p="${p.id}"><b><em style="background:${CAT[p.cat].c}">${p._n}</em>${esc(short(p.name))}</b><span>${p._t}${ref ? " · " + fmtKm(walkM(dist(ref, p))) : ""}</span></button>`).join("") : "";
   } else {
     const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d).slice(0, 10);
-    cards = l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km · şəhərdən kənar" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq") : ""}</span></button>`).join("");
+    const all = visiblePois().filter(okFood).length;
+    cards = (all ? `<button class="nc" id="listBtn" style="background:#3B3631;color:#fff"><b>☰ Siyahı</b><span style="color:#ddd">${all} yer</span></button>` : "") + l.map(({ p, d }) => `<button class="nc" data-p="${p.id}"><b>${CEMO[p.cat] || ""} ${esc(short(p.name))}</b><span>${p.g ? "★" + p.g + " · " : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km · şəhərdən kənar" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq") : ""}</span></button>`).join("");
   }
   box.innerHTML = cards; box.hidden = !cards; box.scrollLeft = 0;
   box.querySelectorAll("[data-p]").forEach(b => b.onclick = () => selectPoi(b.dataset.p, true));
+  const lb = $("#listBtn"); if (lb) lb.onclick = openList;
+}
+function openList() {
+  const ref = meHere() ? S.me : (map ? (c => ({ lat: c.lat, lng: c.lng }))(map.getCenter()) : S.hotel);
+  const l = visiblePois().filter(okFood).map(p => ({ p, d: ref ? dist(ref, p) : 0 })).sort((a, b) => a.d - b.d);
+  const name = ((S.filter === "steak" ? [["steak", (S.pick && S.pick.chip) || "🥩 Steaklər"]] : []).concat(FL).find(x => x[0] === S.filter) || [0, "Yerlər"])[1];
+  $("#bigBox").innerHTML = `<h3 style="font-size:20px;text-align:left">${esc(name)} · ${l.length}</h3>
+   ${l.map(({ p, d }) => `<button class="card mt" data-lp="${esc(p.id)}" style="display:block;width:100%;text-align:left;border:1px solid var(--line)"><b>${CEMO[p.cat] || ""} ${esc(p.name)}</b><div class="sm" style="margin-top:3px">${p.g ? `<span class="rt">★ ${String(p.g).replace(".", ",")}</span>${p.n ? ` <span class="dim">(${p.n >= 1000 ? Math.round(p.n / 1000) + "k" : p.n})</span>` : ""} · ` : ""}${ref ? (d > 15000 ? Math.round(d / 1000) + " km" : fmtKm(walkM(d)) + " · " + walkMin(d) + " dəq piyada") : ""}</div>${p.d ? `<div class="sm dim" style="margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(p.d)}</div>` : ""}</button>`).join("")}
+   <button class="btn wide mt" id="lsClose">Bağla</button>`;
+  $$("[data-lp]").forEach(b => b.onclick = () => { $("#bigModal").classList.remove("on"); selectPoi(b.dataset.lp, true); });
+  $("#lsClose").onclick = () => $("#bigModal").classList.remove("on");
+  $("#bigModal").classList.add("on"); useTrack("list");
 }
 function setFilter(f) {
   S.filter = S.filter === f ? null : f; selPoi = null;
@@ -1493,7 +1506,7 @@ const FL = [["all", "Hamısı"], ["tarix", "🏛 Görməli"], ["muzey", "🖼 Mu
 function renderFilters() {
   const fl = (pickList().length ? [["steak", (S.pick && S.pick.chip) || "🥩 Steaklər"]] : []).concat(FL);
   if (S.filter === "steak" && !pickList().length) S.filter = null;
-  $("#filters").innerHTML = fl.map(([k, t]) => `<button class="chip ${k === "steak" ? "hot" : ""} ${S.filter === k ? "on" : ""}" data-f="${k}" ${k === "steak" ? 'style="background:#C8102E;color:#fff;border-color:#C8102E"' : ""}>${t}</button>`).join("");
+  $("#filters").innerHTML = fl.map(([k, t]) => `<button class="chip ${k === "steak" ? "hot" : ""} ${S.filter === k ? "on" : ""}" data-f="${k}" >${t}</button>`).join("");
   $$("#filters .chip").forEach(b => b.onclick = () => setFilter(b.dataset.f));
 }
 renderFilters();
@@ -1502,6 +1515,15 @@ $("#grpBtn").onclick = groupSheet;
 $("#hotBtn").onclick = () => { routeTo({ id: "hotel", name: S.hotel.name || "Otel", lat: S.hotel.lat, lng: S.hotel.lng, cat: "tarix", d: "" }); };
 $("#meBtn").onclick = () => { if (S.gps !== "on" && S.gps !== "denied") startGPS(); if (S.me && map) mapGo(S.me.lat, S.me.lng, 17); else $("#locChip").click(); };
 $("#sheetX").onclick = () => { $("#sheet").classList.remove("on"); if (selPoi) { selPoi = null; drawPOI(); } };
+const IGTAG = {"stephansdom": "stephansdom", "hofburg": "hofburg", "reitschule": "spanischehofreitschule", "staatsoper": "wienerstaatsoper", "albertina": "albertina", "rathaus": "wienerrathaus", "burgtheater": "burgtheater", "parlament": "parlamentwien", "votiv": "votivkirche", "uni": "univie", "khm": "kunsthistorischesmuseum", "nhm": "naturhistorischesmuseum", "mq": "museumsquartier", "karlskirche": "karlskirche", "secession": "secession", "naschmarkt": "naschmarkt", "belvedere": "belvedere", "schonbrunn": "schoenbrunn", "gloriette": "gloriette", "zoo": "tiergartenschoenbrunn", "riesenrad": "riesenrad", "hundertwasser": "hundertwasserhaus", "kunsthaus": "kunsthauswien", "peterskirche": "peterskirche", "graben": "pestsaeule", "kohlmarkt": "kohlmarkt", "amhof": "amhof", "freyung": "freyung", "ruprecht": "ruprechtskirche", "mozarthaus": "mozarthaus", "stadtpark": "stadtparkwien", "burggarten": "palmenhaus", "volksgarten": "volksgarten", "heldenplatz": "heldenplatz", "ankeruhr": "ankeruhr", "judenplatz": "judenplatz", "augustiner": "augustinerkirche", "kapuziner": "kapuzinergruft", "hausdermusik": "hausdermusik", "minoriten": "minoritenkirche", "donauturm": "donauturm", "domschnitzel": "domschnitzel", "figlmuller": "figlmueller", "reinthalerbeisl": "reinthalersbeisl", "gasthausreinthaler": "gasthausreinthaler", "melker": "melkerstiftskeller", "plachutta": "plachutta", "zaytouna": "alzaytouna", "shakomaako": "shakomaako", "kameel": "schwarzeskameel", "central": "cafecentral", "landtmann": "cafelandtmann", "demel": "demel", "sacher": "cafesacher", "neni": "neniamnaschmarkt", "papas": "papasamnaschmarkt", "bitzinger": "bitzinger", "xm-rathaus": "wienerchristkindlmarkt", "xm-stephan": "stephansplatz", "xm-schonbrunn": "schoenbrunnchristmasmarket", "xm-amhof": "amhof", "xm-freyung": "freyung", "xm-karlsplatz": "artadvent", "xm-spittelberg": "spittelberg", "shop-kaerntner": "kaerntnerstrasse", "shop-graben": "graben", "shop-goldenes": "goldenesquartier", "shop-wienmitte": "wienmitte", "shop-mahue": "mariahilferstrasse", "shop-donauzentrum": "donauzentrum", "shop-parndorf": "designeroutletparndorf"};
+const igTag = p => (IGTAG[p.id] || String(short(p.name)).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss").replace(/ə/g, "e").replace(/[^a-z0-9]/g, "")).slice(0, 40);
+// the same quick links for every place: Google (photos + reviews), Instagram, site, call
+function placeLinks(p) {
+  if (!p || p.cat === "metro" || p.id === "hotel") return "";
+  const x = p.pick || {}, web = x.web || p.web, tel = x.tel || p.tel;
+  const ig = /^https:\/\/(www\.)?instagram\.com\//.test(x.ig || p.ig || "") ? (x.ig || p.ig) : (igTag(p) ? `https://www.instagram.com/explore/tags/${encodeURIComponent(igTag(p))}/` : "");
+  return `<div class="pbtns mt"><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">📸 Şəkillər və rəylər</a>${ig ? `<a class="btn" href="${esc(ig)}" target="_blank" rel="noopener">📷 Instagram${(x.ig || p.ig) ? "" : " #" + esc(igTag(p))}</a>` : ""}${/^https:\/\//.test(web || "") ? `<a class="btn" href="${esc(web)}" target="_blank" rel="noopener">🌐 Sayt / menyu</a>` : ""}${tel ? `<a class="btn" href="tel:${esc(String(tel).replace(/[^+\d]/g, ""))}">📞 Zəng et</a>` : ""}</div>`;
+}
 function openPoi(p) {
   const d = S.me ? dist(S.me, p) : null, an = alertNear(p);
   $("#sheetBody").innerHTML = `<h3 style="font-size:21px;margin-right:36px">${esc(p.name)}</h3><div>${rating(p)} ${pills(p)}</div>
@@ -1509,8 +1531,8 @@ function openPoi(p) {
    <p class="mute" style="margin:8px 0">${esc(p.d)}</p>${price(p) ? `<div class="sm">💶 ${esc(price(p))}</div>` : ""}
    ${d != null ? `<div class="stat"><div><b>${walkMin(d)} dəq</b><span>piyada</span></div><div><b>${fmtKm(walkM(d))}</b><span>məsafə</span></div></div>` : ""}
    ${TICKETS[p.id] ? `<div class="note">🎟 ${esc(TICKETS[p.id][1])}</div>` : ""}${PHOTO[p.id] ? `<div class="note">📸 ${esc(PHOTO[p.id][0])} <b>${esc(PHOTO[p.id][1])}</b></div>` : ""}
-   <div class="pbtns mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">🗺 Google</a></div>`;
-  if (p.pick) { const x = p.pick, extra = `<div class="pbtns mt"><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">📸 Şəkillər və rəylər</a>${/^https:\/\//.test(x.web || "") ? `<a class="btn" href="${esc(x.web)}" target="_blank" rel="noopener">🌐 Sayt / menyu</a>` : ""}${/^https:\/\/(www\.)?instagram\.com\//.test(x.ig || "") ? `<a class="btn" href="${esc(x.ig)}" target="_blank" rel="noopener">📷 Instagram</a>` : ""}${x.tel ? `<a class="btn" href="tel:${esc(x.tel.replace(/[^+\d]/g, ""))}">📞 Zəng et</a>` : ""}</div>`; $("#sheetBody").insertAdjacentHTML("beforeend", extra); }
+   <div class="pbtns mt"><button class="btn pri" id="pGo">🧭 Get</button><a class="btn" href="${uberLink(p)}" target="_blank" rel="noopener">🚕 Uber</a>${TICKETS[p.id] ? `<a class="btn" href="${TICKETS[p.id][0]}" target="_blank" rel="noopener">🎟 Bilet</a>` : ""}<button class="btn" id="pTell">🔊 Hekayə</button><a class="btn" href="${gPlace(p)}" target="_blank" rel="noopener">🗺 Google Maps</a></div>`;
+  $("#sheetBody").insertAdjacentHTML("beforeend", placeLinks(p));
   $("#sheet").scrollTop = 0; $("#sheet").classList.add("on"); $("#pGo").onclick = () => routeTo(p); $("#pTell").onclick = () => tellAbout(p);
 }
 function segOff(a, b, pt) { const kx = 111320 * Math.cos(48.2 * Math.PI / 180), ky = 111320; const ax = a.lng * kx, ay = a.lat * ky, bx = b.lng * kx, by = b.lat * ky, px = pt.lng * kx, py = pt.lat * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
@@ -1656,7 +1678,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "38";
+const APPV = "39";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1930,12 +1952,10 @@ function boot2() {
 S.pick = LS.get("pick", null); try { renderFilters(); } catch (e) {}
 function pickList() { const p = S.pick; if (!p || !Array.isArray(p.items) || (p.until && Date.now() > p.until)) return []; return p.items.filter(x => x && typeof x.lat === "number" && typeof x.lng === "number"); }
 function pickPois() { return pickList().map((x, i) => { const p = { id: "pk" + i, name: x.name, lat: x.lat, lng: x.lng, cat: "yemek", g: x.rating, n: parseInt(String(x.n || "0").replace(/\D/g, "")) || 0, pid: x.pid, d: [x.note, x.addr].filter(Boolean).join(" · "), pick: x }; byId[p.id] = p; return p; }); }
-function mapPick(fit) {
+function mapPick() {
   try { renderFilters(); } catch (e) {}
   if (!map) return; MK.pick.forEach(m => m.remove()); MK.pick = [];
-  const L = S.filter === "steak" ? [] : pickList();
-  L.forEach((x, i) => { const el = document.createElement("div"); el.className = "friend"; el.style.background = "#FFF4E5"; el.innerHTML = `<i style="background:#C8102E">${i + 1}</i>${esc(x.e || "📍")} ${esc(x.name)}`; el.addEventListener("click", ev => { ev.stopPropagation(); pickSheet(i); }); MK.pick.push(addMk(el, x.lng, x.lat, "left")); });
-  if (fit && L.length) { const b = new (ML().LngLatBounds)(); L.forEach(x => b.extend([x.lng, x.lat])); const me = S.friends && ME && S.friends[ME]; if (me && me.lat) b.extend([me.lng, me.lat]); map.fitBounds(b, { padding: { top: 90, bottom: Math.round(innerHeight * 0.45), left: 50, right: 90 }, maxZoom: 16, duration: 600 }); }
+  if (S.filter === "steak") { drawPOI(); renderNear(); }
 }
 function pickSheet(i) {
   const L = pickList(), x = L[i]; if (!x) return;
