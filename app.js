@@ -708,21 +708,21 @@ function parseStory(t) {
 async function identify(file) {
   if (!file) return; clearInputs();
   showResult(`<div class="card"><span class="spin"></span> <span class="mute">Şəkil hazırlanır…</span></div>`);
-  let img, thumb; try { img = await shrink(file, 1024, .8); thumb = (await shrink(file, 320, .7)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
+  let img, thumb; const fullP = { file }; try { img = await shrink(file, 1024, .8); thumb = (await shrink(file, 320, .7)).url; } catch (e) { showResult(`<div class="card">Şəkli aça bilmədim.</div>`); return; }
   // 1) free: what's around me right now (GPS)?
   const near = S.me && S.me.src === "gps" ? nearest(S.me, 4, p => !["metro", "yemek"].includes(p.cat)).filter(x => x.d < 160) : [];
   if (near.length) {
     showResult(`<img class="photo" src="${img.url}" alt="" style="max-height:230px;object-fit:cover"><div class="ttl"><h2>Bu hansıdır?</h2></div>
      <div class="card"><div class="sm dim" style="margin-bottom:6px">📍 Yaxınlıqdakı yerlər</div><ul class="list">${near.map(x => `<li data-pick="${x.p.id}" style="cursor:pointer"><span class="dot" style="background:${CAT[x.p.cat].c}"></span><div class="grow"><b>${esc(short(x.p.name))}</b><span class="s2">${fmtKm(x.d)} · ${esc((x.p.d || "").split(".")[0])}</span></div><span class="btn s pri">Bu</span></li>`).join("")}</ul>
      <button class="btn wide mt" id="pickAi">${S.ai === false ? "Heç biri deyil" : "🔍 Heç biri — şəkildən tanı"}</button></div>`);
-    $$("[data-pick]").forEach(li => li.onclick = () => { const p = byId[li.dataset.pick]; addStamp({ thumb, name: p.name, poi: p }); tellAbout(p, img.url); });
-    $("#pickAi").onclick = () => S.ai === false ? alertBox("🤖 Tezliklə", AI_OFF_MSG) : identifyAI(img, thumb);
+    $$("[data-pick]").forEach(li => li.onclick = () => { const p = byId[li.dataset.pick]; addStamp({ thumb, fullP, name: p.name, poi: p }); tellAbout(p, img.url); });
+    $("#pickAi").onclick = () => S.ai === false ? alertBox("🤖 Tezliklə", AI_OFF_MSG) : identifyAI(img, thumb, fullP);
     return;
   }
   if (S.ai === false) { showResult(`<img class="photo" src="${img.url}" alt=""><div class="card mt">Yaxınlıqda tanınmış yer tapmadım (GPS). Xəritədən yeri seçib “🔊 Hekayə”yə bas.</div>`); return; }
-  identifyAI(img, thumb);
+  identifyAI(img, thumb, fullP);
 }
-async function identifyAI(img, thumb) {
+async function identifyAI(img, thumb, fullP) {
   cur = { img: img.url, thumb, name: "", story: "", facts: [], tip: "", poi: null, history: [], loading: true };
   showResult(""); renderStory();
   const near = (S.me ? nearest(S.me, 30, p => p.cat !== "metro").map(x => x.p) : POI.filter(p => p.cat !== "metro"));
@@ -733,10 +733,10 @@ async function identifyAI(img, thumb) {
       onText: txt => { const o = parseStory(txt); Object.assign(cur, { name: o.name || cur.name, story: o.story, poi: byId[o.id] || cur.poi }); if (Date.now() - lastDraw > 120) { lastDraw = Date.now(); renderStory(true); } } });
     const o = parseStory(t);
     const poi = byId[o.id] || null;
-    if (poi && STORIES[poi.id]) { addStamp({ thumb, name: poi.name, poi }); return tellAbout(poi, img.url); } // known place → use free, verified story
+    if (poi && STORIES[poi.id]) { addStamp({ thumb, fullP, name: poi.name, poi }); return tellAbout(poi, img.url); } // known place → use free, verified story
     Object.assign(cur, { name: o.name || "Naməlum yer", story: o.story, facts: o.facts, tip: o.tip, conf: o.conf, poi, loading: false });
     if (cur.poi) LS.set("st." + cur.poi.id, { s: cur.story, f: cur.facts, t: cur.tip });
-    addStamp(cur);
+    addStamp(Object.assign({}, cur, { fullP }));
   } catch (e) { cur.loading = false; cur.err = aiErr(e); }
   renderStory();
 }
@@ -1636,8 +1636,9 @@ function renderPack(B) {
    <ul class="list mt">${PACK.map((p, i) => `<li class="chk ${st[i] ? "on" : ""}" data-pk="${i}"><span class="bx">${st[i] ? "✓" : ""}</span><div class="grow">${esc(p[0])}</div></li>`).join("")}</ul></div>`;
   $$("[data-pk]").forEach(li => li.onclick = () => { const s2 = packState(); s2[li.dataset.pk] = !s2[li.dataset.pk]; LS.set("pack." + (ME || "x"), s2); renderPack(B); });
 }
-function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" + Date.now(); S.album = [{ id, name: c.name, img: c.thumb, ts: Date.now() }].concat(S.album.filter(a => a.id !== id)).slice(0, 40); LS.set("album", S.album); sharePhoto(c.thumb, c.name, c.poi ? c.poi.id : ""); }
-async function sharePhoto(thumb, name, poi) { if (!thumb || !S.code) return; try { await api("photo.add", { thumb, name: name || "", poi: poi || "", who: ME || "", ts: Date.now() }); } catch (e) {} }
+function addStamp(c) { if (!c.thumb) return; const id = c.poi ? c.poi.id : "x" + Date.now(); S.album = [{ id, name: c.name, img: c.thumb, ts: Date.now() }].concat(S.album.filter(a => a.id !== id)).slice(0, 40); LS.set("album", S.album); sharePhoto(c.thumb, c.name, c.poi ? c.poi.id : "", c.fullP && c.fullP.file ? shrink(c.fullP.file, 2048, .88).then(x => x.url) : null); }
+// the small thumb is for the album; the full-quality copy (≤2048 px) is kept on the server for a later trip book
+async function sharePhoto(thumb, name, poi, fullP) { if (!thumb || !S.code) return; let full = ""; try { full = fullP ? await fullP : ""; } catch (e) {} try { await api("photo.add", { thumb, full, name: name || "", poi: poi || "", who: ME || "", ts: Date.now() }); } catch (e) {} }
 function taxiCard() {
   const h = S.hotel || {};
   $("#bigBox").innerHTML = `<div class="sm dim">🚕 Bitte bringen Sie mich zu:</div><div class="taxi">${esc(h.name || "Hotel")}</div>${h.addr ? `<div style="font-size:20px;font-weight:600">${esc(h.addr)}</div>` : ""}<div class="sm mute mt">“Zəhmət olmasa məni bu ünvana aparın”</div>${h.phone ? `<div class="sm mt">📞 <a href="tel:${esc(h.phone.replace(/\s/g, ""))}">${esc(h.phone)}</a></div>` : ""}
@@ -1652,7 +1653,7 @@ async function renderAlbum(B) {
     B.innerHTML = `<label class="btn pri wide" style="position:relative;overflow:hidden">📷 Şəkil əlavə et (hamı görəcək)<input type="file" accept="image/*" multiple id="albIn" style="position:absolute;inset:0;opacity:0"></label>
      ${all.length ? `<div class="grid2 mt">${all.map(a => `<div class="stamp" data-a="${esc(a.poi || a.id)}" data-img="${esc(a.img)}"><img src="${a.img}" alt="" loading="lazy"><div><b>${esc(short(a.name))}</b><br><span class="dim">${a.who ? esc(a.who) + " · " : ""}${fmtT(a.ts)}</span></div></div>`).join("")}</div>` : `<div class="card mute mt" style="text-align:center;padding:30px">Hələ şəkil yoxdur.<br>“Yeri tanı” ilə çəkilənlər də bura düşür.</div>`}`;
     $("#albIn").onchange = async e => { const fs = Array.from(e.target.files || []).slice(0, 10); e.target.value = ""; if (!fs.length) return; toast("Yüklənir…");
-      for (const f of fs) { try { const t = (await shrink(f, 480, .72)).url; S.photos.unshift({ id: "l" + Date.now(), ts: Date.now(), who: ME || "", name: "", thumb: t }); await sharePhoto(t, "", ""); } catch (er) {} }
+      for (const f of fs) { try { const t = (await shrink(f, 480, .72)).url; S.photos.unshift({ id: "l" + Date.now(), ts: Date.now(), who: ME || "", name: "", thumb: t }); await sharePhoto(t, "", "", shrink(f, 2048, .88).then(x => x.url)); } catch (er) {} }
       toast("✅ Albomda"); draw(); load(); };
     $$("[data-a]").forEach(s => s.onclick = () => { const p = byId[s.dataset.a]; if (p) tellAbout(p); else { $("#bigBox").innerHTML = `<img src="${s.dataset.img}" style="width:100%;border-radius:14px"><button class="btn pri wide mt" id="bbX">Bağla</button>`; $("#bigModal").classList.add("on"); $("#bbX").onclick = () => $("#bigModal").classList.remove("on"); } });
   };
@@ -1684,7 +1685,7 @@ window.goView = goView; window.routeTo = routeTo;
 
 
 /* ================= v11: quick actions & guides ================= */
-const APPV = "41";
+const APPV = "42";
 // auto-update: if a newer version is deployed, reload once so nobody sits on an old copy
 let pendingVersion = null;
 document.addEventListener("visibilitychange", () => { if (document.hidden && pendingVersion && !typing()) { LS.set("reloadedFor", { v: pendingVersion, t: Date.now() }); location.reload(); } });
@@ -1834,7 +1835,7 @@ async function bookScreen() {
   $("#bkPrint").onclick = () => window.print();
   $$("[data-na]").forEach(b => b.onclick = async () => { const t = prompt("Bu gün nə yadda qaldı?"); if (!t || !t.trim()) return; try { await api("note.add", { day: b.dataset.na, txt: t.trim() }); bookScreen(); } catch (e) { toast(aiErr(e)); } });
   $$("[data-nd]").forEach(b => b.onclick = async () => { try { await api("note.del", { id: b.dataset.nd }); bookScreen(); } catch (e) { toast(aiErr(e)); } });
-  $$("[data-np]").forEach(inp => inp.onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const t = (await shrink(f, 480, .72)).url; await api("photo.add", { thumb: t, name: "", poi: "", ts: Date.parse(inp.dataset.np + "T12:00:00+01:00") === Date.parse(today + "T12:00:00+01:00") ? Date.now() : Date.parse(inp.dataset.np + "T12:00:00+01:00"), priv: true }); toast("📷 Əlavə olundu"); bookScreen(); } catch (er) { toast(aiErr(er)); } });
+  $$("[data-np]").forEach(inp => inp.onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const t = (await shrink(f, 480, .72)).url; let full = ""; try { full = (await shrink(f, 2048, .88)).url; } catch (e2) {} await api("photo.add", { thumb: t, full, name: "", poi: "", ts: Date.parse(inp.dataset.np + "T12:00:00+01:00") === Date.parse(today + "T12:00:00+01:00") ? Date.now() : Date.parse(inp.dataset.np + "T12:00:00+01:00"), priv: true }); toast("📷 Əlavə olundu"); bookScreen(); } catch (er) { toast(aiErr(er)); } });
 }
 
 // ---------- wire up home mini tiles ----------
